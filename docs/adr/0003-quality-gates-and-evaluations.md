@@ -1,0 +1,11 @@
+# Separate blocking engineering checks from AI evaluations and mutation analysis
+
+GitHub Actions must enforce automated tests, linting, formatting, type checking, architecture dependency checks, and validated CRAP checks as merge blockers. Use Vitest for tests, Biome for linting and formatting, TypeScript for type checking, and dependency-cruiser for import rules. Import rules prevent contracts importing implementations, cross-capability imports of private implementations, and SDK imports outside adapters, with explicit composition-root exceptions.
+
+Initial blocking thresholds are 90% statement coverage, 90% branch coverage, and a maximum CRAP score of 30 per production function. Use fresh unit/integration coverage; missing or invalid coverage fails the check. Production scoring excludes tests, generated code, and type-only declarations. These are adjustable starting thresholds, not evidence of behavioral completeness.
+
+Supplement Biome with test-only ESLint checks for focused or skipped tests, duplicate titles, invalid or unawaited assertions, and conditional assertions. Enable rules only after positive and negative fixtures verify their behavior against the project's actual Effect test syntax and assertion helpers; a plugin preset is not sufficient evidence. Review tests for meaningful public-behavior assertions and relevant failure cases. Assertion-presence linting does not establish that an assertion executes or detects incorrect behavior.
+
+Mutation testing is initially advisory and may become a merge blocker through a later explicit decision. Its intended scope is changed production code, using coverage to select tests that can exercise that code. Changed-code selection and coverage-based test selection are distinct requirements; neither is satisfied merely by rerunning cached mutation results. The implementation must verify those semantics against the chosen tooling.
+
+AI evaluation cases must be version controlled and produce reproducible reports: record the evaluated configuration and results so runs can be compared, without assuming identical model outputs. Evaluations complement ordinary automated tests by assessing AI decision quality. The evaluation runner, datasets, scoring, and merge policy remain open until the relevant AI behavior is defined; no AI judgment format or moderation orchestration is implied.
