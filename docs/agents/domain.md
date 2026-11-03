@@ -27,7 +27,3 @@ As subdomains are introduced, add their glossary and ADR paths to the root map. 
 Use terms as defined in the relevant context's glossary. Note unresolved terminology for `/domain-modeling`.
 
 When a proposal contradicts an existing ADR, identify the ADR and explain why the decision should be revisited.
-
-## Agent instruction changes
-
-When editing `AGENTS.md` or deciding where agent guidance belongs, read the [coding standards](../../CODING_STANDARDS.md).
