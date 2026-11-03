@@ -11,7 +11,3 @@ Use `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `won
 ### Domain docs
 
 Turborepo with contexts per subdomain: root `GLOSSARY-MAP.md`, per-context glossaries and ADRs. See `docs/agents/domain.md`.
-
-### Integration changes
-
-Before changing Discord dependencies or integration, read `docs/adr/0005-discord-and-ai-integrations.md` for the SDK choice and approval requirement.
