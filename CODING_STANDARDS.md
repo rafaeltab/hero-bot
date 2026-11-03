@@ -1,4 +1,4 @@
-# Coding guidelines
+# Coding standards
 
 ## Agent instructions
 

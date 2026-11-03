@@ -30,4 +30,4 @@ When a proposal contradicts an existing ADR, identify the ADR and explain why th
 
 ## Agent instruction changes
 
-When editing `AGENTS.md` or deciding where agent guidance belongs, read the [coding guidelines](../coding-guidelines.md).
+When editing `AGENTS.md` or deciding where agent guidance belongs, read the [coding standards](../../CODING_STANDARDS.md).
