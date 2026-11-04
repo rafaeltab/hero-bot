@@ -25,3 +25,15 @@ The moderation action judged appropriate for a case, regardless of whether it is
 
 **Applied action**:
 The moderation action actually carried out for a case. It can differ from the recommended action.
+
+**Moderation evidence**:
+The messages, context, and relevant member history supporting a moderation judgment, with their sources and authorship distinguished. Missing material is a limitation of the evidence, not a finding about the member.
+
+**Moderation history**:
+Recorded moderation findings and outcomes concerning a member, including corrections and overturned actions. It is distinct from the member's entire message history.
+
+**Moderation judgment**:
+An assessment of a message under the moderation policy, consisting of a recommended action, a concise reason including relevant uncertainty, and any offending URLs. It is distinct from authorization to act and from the applied action.
+
+**Offending URL**:
+A URL implicated in a moderation violation. Its inclusion records the policy finding, not proof that the destination hosts pirated material.
