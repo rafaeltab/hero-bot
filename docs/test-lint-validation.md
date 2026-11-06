@@ -1,161 +1,39 @@
-# Test linting (#22)
+# Test linting
 
-This implements [#22](https://github.com/rafaeltab/hero-bot/issues/22) within
-[#10](https://github.com/rafaeltab/hero-bot/issues/10). No production behavior changes.
-The prepared branch contained integration tip
-`8729ae8063be4038abef2a745639cb1539f68015` before implementation.
+`pnpm lint:tests` lints application tests and executes isolated rule fixtures.
+`pnpm lint`, `pnpm check`, and **CI / Checks** enforce it. Intentionally invalid
+fixture strings never execute as application tests or enter production coverage.
 
-## Commands and CI
+Use named imports (aliases supported) from `vitest` or `@effect/vitest`, static
+registration titles, and `it`/`test` registrations including `each`, `effect`,
+`effect.each`, `live` and `live.each`. `describe`/`suite` delimit title scopes.
+The approved assertion helpers are imported `expect(...)` and `expect.poll(...)`,
+with ordinary matchers, negation, resolves and rejects.
 
-- `pnpm lint:tests`: lint application tests, then verify the rule fixtures.
-- `node --test scripts/test-lint/check.test.mjs`: fixtures alone.
-- `pnpm check`: existing Biome, type, test and fresh coverage checks, plus test linting.
+| Rule category                | Enforced behavior                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Focus/skip                   | Reject only, skip, todo, conditional registration, missing callbacks and enabled inline options            |
+| Duplicate titles             | Reject repeated static registrations in a suite, including each declarations                               |
+| Invalid/unawaited assertions | Validate matcher chains and await asynchronous assertions, including polling                               |
+| Conditional assertions       | Reject assertions under conditionals, loops, catch branches/callbacks and short-circuit branches           |
+| Effect semantics             | Generator returns do not await polling promises; Effect.sync does not await asynchronous assertion results |
 
-The blocking GitHub Actions `baseline` job, named
-**CI / Checks**, executes `pnpm lint`;
-that command now includes `lint:tests`. Both real-test violations and broken fixture
-expectations fail that step. No separate advisory job or production ESLint scan is
-introduced. A hosted Actions run was not triggered from this implementation branch.
+Use `yield* Effect.promise(() => expect(promise).resolves.toBe(value))` inside an
+Effect generator. `Effect.tryPromise` also handles a returned promise.
+`yield* Effect.sync(() => expect(promise).resolves.toBe(value))` is rejected:
+`sync` returns the promise as a value instead of awaiting the assertion. The rule
+resolves imported Effect/constructor aliases (`effect` and `effect/Effect`) and
+ignores shadowed locals. Synchronous assertions inside `Effect.sync` remain valid.
+Ordinary async tests must await asynchronous assertions.
 
-ESLint applies only to `apps/*/test/**/*.ts` and
-`scripts/test-lint/fixtures/**/*.ts`. Fixture inputs are isolated strings in
-`scripts/test-lint/check.test.mjs`; CLI probes temporarily materialize them under
-the latter path and remove them in `finally`. They are outside application Vitest
-`test/**/*.test.ts` discovery, TypeScript's app test inputs, and `src`/`dist`
-production coverage. They never execute intentionally invalid tests.
+Fixtures reproduce the review's exact unsafe wrapper, verify valid promise-aware
+constructors, poll semantics, alias/shadow handling, every supported registration
+form and real ESLint CLI failure. Pinned tooling is ESLint 10.14.0,
+@vitest/eslint-plugin 1.6.28, typescript-eslint 8.72.1. Local rules fill gaps in the
+upstream plugin's recognition of Effect registrations and semantics.
 
-## Supported syntax and rules
-
-Use named imports (aliases supported) from `vitest` or `@effect/vitest`.
-The exercised registration matrix is `it`, `it.each`, `it.effect`,
-`it.effect.each`, `it.live`, and `it.live.each`, using array tables and callback
-bodies (Effect callbacks return `Effect.gen`). `test` is also recognized, and
-`describe`/`suite` delimit title scopes. Use a static string or interpolation-free
-template for registration titles. The approved assertion helper is `expect(value)`
-imported from either package, including matcher calls, `.not`, `.resolves` and
-`.rejects`, plus `expect.poll(callback)` with matchers and `.not`.
-Await polling explicitly, including in Effect callbacks:
-`yield* Effect.promise(async () => { await expect.poll(callback).toEqual(value); })`.
-The installed polling rule rejects implicit arrow returns; explicit returns are
-accepted by that rule, but a generator return does not await a Promise and is
-rejected by the local generator guard. Await asynchronous assertions in ordinary async tests; inside an Effect
-use `yield* Effect.promise(() => expect(promise).resolves.matcher(...))`.
-Existing application tests remain the behavioral evidence for the application.
-These lint fixtures verify lint diagnostics, not application behavior.
-
-| Enabled rule                         | Enforcement                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/no-focused-tests`             | Reject `.only` on tests/suites, including chained Effect and each registrations, and enabled inline `only` options.                                                                                                                                                                                                                                                                         |
-| `tests/no-skipped-tests`             | Reject `.skip`, `.todo`, `.skipIf`, `.runIf`, missing callbacks, and enabled inline `skip`/`todo` options. Conditional registration is rejected conservatively without evaluating its condition.                                                                                                                                                                                            |
-| `tests/no-duplicate-titles`          | Reject repeated static test titles or suite titles in the same suite, including repeated each declarations. Separate suites may reuse test titles.                                                                                                                                                                                                                                          |
-| `vitest/valid-expect`                | Reject missing arguments/matchers, uncalled matchers, invalid modifier chains and unawaited async assertions (`alwaysAwait: true`). Explicit return statements are rejected conservatively, including generator returns that would not await the assertion; implicit arrow returns remain supported for `Effect.promise`. TypeScript additionally checks matcher names/types in real tests. |
-| `vitest/require-awaited-expect-poll` | Reject unawaited polling assertions, including aliases and every supported Effect form. Explicitly await polls inside `Effect.promise` async callbacks.                                                                                                                                                                                                                                     |
-| `tests/no-generator-poll-return`     | Reject returning a polling assertion from a generator; the upstream polling rule accepts returns without checking whether the function awaits them.                                                                                                                                                                                                                                         |
-| `tests/no-conditional-assertions`    | Reject imported `expect` and `expect.poll` calls under if/switch/catch/loops, conditional branches, short-circuit right operands, and `.catch` callbacks, including inside Effect generators and local helpers.                                                                                                                                                                             |
-
-The local ESLint rules resolve import bindings through ESLint scope information;
-shadowed names and unrelated functions do not become test registrations. The
-Vitest plugin is configured with `vitestImports: ["@effect/vitest"]` for assertions.
-The installed plugin's fixed test-chain list omits Effect/live registrations, and
-its duplicate-title rule skips each. Local rules explicitly cover those gaps;
-there is no preset pretending to recognize them.
-
-## Evidence and tooling
-
-Pinned ESLint **10.14.0**, `@vitest/eslint-plugin` **1.6.28**, and
-`typescript-eslint` **8.72.1**, alongside baseline TypeScript **6.0.3**.
-Versions, engines and peer ranges were checked with `npm view`; strict-peer and
-frozen-lockfile installation succeeded. Actual fixture execution validated the
-installed combination using pinned Node **24.22.2** and pnpm **12.16.1**.
-Primary references: [ESLint configuration](https://eslint.org/docs/latest/use/configure/configuration-files),
-[Vitest plugin](https://github.com/vitest-dev/eslint-plugin-vitest),
-[ESLint package](https://registry.npmjs.org/eslint/10.14.0),
-[plugin package](https://registry.npmjs.org/@vitest%2feslint-plugin/1.6.28),
-[TypeScript ESLint package](https://registry.npmjs.org/typescript-eslint/8.72.1).
-Recognition behavior was checked against the installed plugin source, and Effect
-forms against installed `@effect/vitest` 4.1.2 declarations.
-
-TDD used the ESLint diagnostics boundary already authorized for this ticket.
-Each new rule category first failed because the invalid fixture produced no
-expected diagnostic; enabling the minimal rule made its slice pass. Async assertion
-fixtures share the `valid-expect` cycle with malformed assertions. Additional red
-cycles exposed inline option objects and Promise catch callbacks before adding
-those checks. A further red cycle exposed generator-returned async assertions; `alwaysAwait` closes that gap. Positive fixtures accompany each category across the six-form
-matrix. CLI probes verify exit 0 for valid input and exit 1 plus the expected rule
-ID for every required invalid category. Alias/shadowing and suite-scope probes
-check recognition independently of the application's tests.
-
-## Limits
-
-Static linting cannot prove that assertions execute, detect bad behavior, or are
-meaningful. No assertion-presence gate is claimed. Review behavior and failure
-cases separately. Duplicate each declarations are checked by their title template;
-collisions produced by runtime table expansion or computed titles are not evaluated.
-
-Namespace imports, re-exported/custom assertion wrappers, destructured test-context
-assertions, dynamically selected registration members, standalone `effect`/`live`
-imports, tagged-template each tables, custom test builders/layers, and options
-stored in variables or spreads are outside the verified syntax. Keep tests on the
-supported forms; add fixtures and recognition before adopting another form/helper.
-Conditional checks are lexical, not interprocedural control-flow analysis: helpers
-called only conditionally cannot be proven unconditional, and loops are rejected
-even when their input is statically nonempty. Promise catch checks conservatively
-recognize the method name without proving the receiver is a Promise.
-
-This slice does not certify architecture, adapters, CRAP attribution, mutation
-selection or the full scaffold; those remain sibling work on the integration branch.
-
-## Final local validation
-
-Both local and freshly fetched remote integration tips were merged into the feature
-branch before the final checks; both still resolved to
-`8729ae8063be4038abef2a745639cb1539f68015` (already contained). Frozen installation
-and `pnpm check` passed: 13 lint-fixture tests, real application-test linting, Biome,
-TypeScript, six application tests, and freshly regenerated coverage. Coverage remains
-93.75% statements and 100% branches; the baseline has no instrumented production
-branches, so that branch percentage is vacuous. No production scoring exclusions
-were added. Typecheck/test tasks reused valid Turbo cache entries on the final
-rerun; the earlier full run executed them, and coverage reruns all six tests uncached.
-
-Coordination: merge this branch with a fresh merger into
-`t3/scaffold-foundation-integration`. Shared edits are root `package.json`,
-`pnpm-lock.yaml`, and the appended workspace-validation pointer. Retain sibling gate
-scripts while combining the `lint` command; regenerate the lockfile with pinned pnpm
-if another ticket adds dependencies. No workflow edits are necessary: retain the
-existing blocking `pnpm lint` step. No PR was opened, integration branch changed,
-issue closed, or PR watch started by this slice.
-
-## Integration validation
-
-Merged feature tip `92ca1db84139084303ccb790b547460c292b00ae` into integration
-tip `78adf411a7126e0262a40129b976e3f3630306db`, retaining the architecture command,
-dependency-cruiser pin, all baseline scripts, and the blocking CI steps. Combined
-the documentation pointers and regenerated the lockfile with pinned pnpm; no
-existing lockfile dependencies were removed.
-
-Using `/tmp/hero-16-tools/node_modules/.bin` (Node 24.22.2, pnpm 12.16.1),
-`pnpm install --frozen-lockfile --strict-peer-dependencies` passed, followed by
-`TURBO_FORCE=true pnpm check`. Biome and real-test ESLint passed, all 13 lint-fixture
-tests passed, the production architecture graph had no violations, and all 12
-architecture fixture graphs passed. Typecheck, build, nine application tests, and
-fresh coverage ran with zero Turbo cache hits. Coverage validation passed at
-30/31 statements (96.77%), 13/13 functions and 16/16 lines (100%). The reported
-100% branches remains vacuous (zero instrumented branches); the existing entry-point
-source/compiled statement attribution limitation remains. No production behavior,
-coverage exclusions, thresholds, or enforcement rules changed during integration.
-No hosted Actions run or live external integration was performed.
-
-## Scaffold review fixes
-
-The two review probes initially produced zero diagnostics: an unawaited
-`expect.poll(() => 2).toBe(2)` and a conditional
-`if (enabled) await expect.poll(() => 2).toBe(2)`. Failing fixtures reproduced
-both gaps before enabling the installed polling rule and extending local helper
-recognition. A further failing fixture exposed generator-returned polls; the
-local generator guard closes the upstream return exemption for that case.
-
-The matrix now verifies polling failures, aliases, conditional control flow,
-awaited and negated positives across all six supported registration forms, plus
-shadowed helpers. CLI fixtures verify exit 1 for both reported examples and exit
-0 for awaited polling. Real PostgreSQL tests use explicit async/await callbacks
-and still observe database sessions before and after scoped operations.
+Static checks cannot prove assertions execute or catch incorrect behavior.
+Computed registrations/titles, custom assertion wrappers, namespace Vitest imports,
+tagged-template tables and dynamic/spread registration options are not verified.
+Add fixtures/recognition before adopting new forms. Conditional checks are lexical,
+not interprocedural control-flow analysis. See [current validation](scaffold-validation.md).
