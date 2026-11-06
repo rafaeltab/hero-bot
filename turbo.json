@@ -11,9 +11,11 @@
     },
     "typecheck": {},
     "test": {
+      "env": ["HERO_TEST_DATABASE_URL"],
       "dependsOn": ["build"]
     },
     "coverage": {
+      "env": ["HERO_TEST_DATABASE_URL"],
       "dependsOn": ["build"],
       "cache": false,
       "outputs": ["coverage/**"]
