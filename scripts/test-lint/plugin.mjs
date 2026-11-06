@@ -1,6 +1,6 @@
 // Resolve named imports through ESLint's scope so aliases work and shadowed names
 // do not become false test registrations or assertions.
-function importedName(context, node) {
+function importedBinding(context, node) {
   if (node.type !== "Identifier") return undefined;
   let scope = context.sourceCode.getScope(node);
   while (scope) {
@@ -9,12 +9,33 @@ function importedName(context, node) {
       const definition = variable.defs[0];
       if (definition?.type !== "ImportBinding") return undefined;
       const declaration = definition.parent;
-      if (!["vitest", "@effect/vitest"].includes(declaration.source.value))
-        return undefined;
-      return definition.node.imported?.name;
+      return {
+        source: declaration.source.value,
+        name: definition.node.imported?.name ?? "*",
+      };
     }
     scope = scope.upper;
   }
+}
+
+function importedName(context, node) {
+  const binding = importedBinding(context, node);
+  if (["vitest", "@effect/vitest"].includes(binding?.source))
+    return binding.name;
+}
+
+function isEffectSync(context, callee) {
+  const call = chain(callee);
+  if (!call) return false;
+  const binding = importedBinding(context, call.root);
+  return (
+    (binding?.source === "effect" &&
+      binding.name === "Effect" &&
+      call.members.join(".") === "sync") ||
+    (binding?.source === "effect/Effect" &&
+      ((binding.name === "*" && call.members.join(".") === "sync") ||
+        (binding.name === "sync" && call.members.length === 0)))
+  );
 }
 
 function chain(node) {
@@ -67,6 +88,42 @@ const rule = (message, create) => ({
 
 export default {
   rules: {
+    "no-async-assertion-in-sync": rule(
+      "Effect.sync does not await promises; use Effect.promise for asynchronous assertions.",
+      (context) => ({
+        CallExpression(node) {
+          // Inspect only the outer matcher call, not expect(...) and modifiers.
+          if (node.parent.type === "MemberExpression") return;
+          const call = chain(node);
+          if (
+            !call ||
+            importedName(context, call.root) !== "expect" ||
+            !call.members.some((name) =>
+              ["resolves", "rejects", "poll"].includes(name),
+            )
+          )
+            return;
+          for (let parent = node.parent; parent; parent = parent.parent) {
+            if (
+              [
+                "ArrowFunctionExpression",
+                "FunctionExpression",
+                "FunctionDeclaration",
+              ].includes(parent.type)
+            ) {
+              const invocation = parent.parent;
+              if (
+                invocation.type === "CallExpression" &&
+                invocation.arguments[0] === parent &&
+                isEffectSync(context, invocation.callee)
+              )
+                context.report({ node, messageId: "invalid" });
+              return;
+            }
+          }
+        },
+      }),
+    ),
     // The upstream poll rule accepts any return, but generator returns are values,
     // not awaited promises. Effect.gen therefore needs this additional guard.
     "no-generator-poll-return": rule(

@@ -9,6 +9,7 @@ export default [
     settings: { vitest: { vitestImports: ["@effect/vitest"] } },
     plugins: { vitest, tests },
     rules: {
+      "tests/no-async-assertion-in-sync": "error",
       "tests/no-conditional-assertions": "error",
       "vitest/require-awaited-expect-poll": "error",
       "tests/no-generator-poll-return": "error",

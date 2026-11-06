@@ -228,6 +228,11 @@ test("the CI lint command rejects isolated invalid files with exit 1", async () 
         "if (enabled) await expect.poll(() => 2).toBe(2);",
         "tests/no-conditional-assertions",
       ],
+      [
+        "it.effect",
+        "yield* Effect.sync(() => expect(Promise.resolve(2)).resolves.toBe(3));",
+        "tests/no-async-assertion-in-sync",
+      ],
       ["it.effect.only", "expect(2).toBe(2);", "tests/no-focused-tests"],
       ["it.live.skip", "expect(2).toBe(2);", "tests/no-skipped-tests"],
       ["it.effect.each([1])", "expect(2);", "vitest/valid-expect"],
@@ -455,4 +460,72 @@ test("polling return semantics and both approved import sources are verified", a
       ["tests/no-generator-poll-return"],
     );
   }
+});
+
+test("Effect.sync cannot await asynchronous assertions but Effect.promise can", async () => {
+  const unsafe = source(
+    "it.effect",
+    "unsafe sync",
+    "yield* Effect.sync(() => expect(Promise.resolve(2)).resolves.toBe(3));",
+  );
+  assert.deepEqual(await messages(unsafe), [
+    "tests/no-async-assertion-in-sync",
+  ]);
+  for (const wrapper of ["promise", "tryPromise"]) {
+    assert.deepEqual(
+      await messages(unsafe.replace("Effect.sync", `Effect.${wrapper}`)),
+      [],
+    );
+  }
+});
+
+test("synchronous Effect assertion checks resolve aliases without flagging shadowed bindings", async () => {
+  for (const [imports, sync, promise] of [
+    ['import { Effect as Fx } from "effect";', "Fx.sync", "Fx.promise"],
+    ['import * as Fx from "effect/Effect";', "Fx.sync", "Fx.promise"],
+    [
+      'import { sync as immediate, promise as awaited } from "effect/Effect";',
+      "immediate",
+      "awaited",
+    ],
+  ]) {
+    const header = `import { it, expect as verify } from "@effect/vitest"; ${imports}`;
+    const assertion = "verify(Promise.resolve(2)).resolves.toBe(3)";
+    const code = `${header} it.effect("unsafe", () => ${sync}(() => ${assertion}));`;
+    assert.ok(
+      (await messages(code)).includes("tests/no-async-assertion-in-sync"),
+    );
+    assert.deepEqual(await messages(code.replace(sync, promise)), []);
+    assert.deepEqual(
+      await messages(
+        `${header} function helper(${sync.split(".")[0]}) { return ${sync}(() => ${assertion}); }`,
+      ),
+      [],
+    );
+    assert.deepEqual(
+      await messages(
+        `${header} function helper(verify) { return ${sync}(() => ${assertion}); }`,
+      ),
+      [],
+    );
+  }
+  for (const body of [
+    "yield* Effect.sync(async () => { await expect(Promise.resolve(2)).resolves.toBe(3); });",
+    "yield* Effect.sync(() => expect.poll(() => 2).toBe(3));",
+  ])
+    assert.ok(
+      (await messages(source("it.effect", "unsafe", body))).includes(
+        "tests/no-async-assertion-in-sync",
+      ),
+    );
+  assert.deepEqual(
+    await messages(
+      source(
+        "it.effect",
+        "sync",
+        "yield* Effect.sync(() => expect(2).toBe(2));",
+      ),
+    ),
+    [],
+  );
 });
