@@ -43,7 +43,9 @@ pnpm lint        # Biome lint and formatting check
 pnpm format      # formatting and safe lint fixes
 pnpm typecheck
 pnpm test        # builds first, then Vitest
-pnpm coverage    # force fresh build/coverage and validate report
+pnpm test:crap   # real-runtime attribution and gate fixtures
+pnpm coverage    # fresh 90/90 coverage plus per-function CRAP <=30
+pnpm crap        # revalidate existing fresh CRAP evidence
 pnpm check       # all baseline checks above
 ```
 
@@ -57,6 +59,12 @@ source and subprocess execution, and remaps compiled code through TypeScript sou
 maps. Tests, declarations and generated output are excluded from final scoring.
 Fresh runs delete previous reports and bypass Turbo caches. The validator rejects
 missing, malformed, empty, inconsistent or incomplete production reports.
+
+CRAP uses exact source-function attribution and per-function statement coverage.
+The source-only attribution run is separate from the mandatory subprocess-aware
+90/90 baseline; missing, invalid or stale evidence fails. See
+[CRAP semantics and verification](docs/crap-validation.md) for the metric, exclusions,
+worked scores and source-mapping limitations.
 
 See [validation and coordination notes](docs/workspace-validation.md) for versions,
 evidence and sibling work, and [evaluation conventions](evaluations/README.md) for

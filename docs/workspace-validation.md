@@ -97,3 +97,7 @@ Capability contracts and architecture enforcement are now demonstrated by #17;
 see [capability conventions](capability-conventions.md) for the layout, composition
 exceptions, blocking commands, fixtures and downstream integration guidance. The
 "no capability contracts" note above describes the original #16 baseline only.
+
+Test-only ESLint enforcement and its fixture evidence are documented in
+[test lint validation](test-lint-validation.md) (#22). `pnpm lint` now also runs
+those checks within the existing blocking CI job.

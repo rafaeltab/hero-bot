@@ -38,4 +38,5 @@ jobs:
       - run: pnpm architecture
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm coverage
+      - run: pnpm test:crap
+      - run: pnpm coverage # fresh 90/90 coverage and validated per-function CRAP <=30
