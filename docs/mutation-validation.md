@@ -245,6 +245,8 @@ graphs, TypeScript/build, **20 application tests** (11 real PostgreSQL tests),
 14 CRAP/evidence fixtures, fresh baseline coverage **98.57% statements / 100%
 branches**, and **21 production functions with CRAP <=2**. Logs are
 `/tmp/hero23-postgres-check.log` and `/tmp/hero23-postgres-fixtures.log`.
-The database observer found zero remaining test-role sessions; only this slice's
-container was stopped. This supersedes the earlier nine-test baseline totals.
+The final independent observer counted one other test-role session before teardown;
+its identity was not captured, so no zero-session cleanup claim is made for that
+probe. The scoped adapter cleanup tests passed. This slice's disposable container
+was then stopped and removed, ending its sessions. This supersedes the earlier nine-test baseline totals.
 The final scope contains tooling/docs only relative to the latest integration tip.
