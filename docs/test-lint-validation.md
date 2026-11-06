@@ -12,7 +12,7 @@ The prepared branch contained integration tip
 - `pnpm check`: existing Biome, type, test and fresh coverage checks, plus test linting.
 
 The blocking GitHub Actions `baseline` job, named
-**Lint, architecture, types, tests and fresh coverage**, executes `pnpm lint`;
+**CI / Checks**, executes `pnpm lint`;
 that command now includes `lint:tests`. Both real-test violations and broken fixture
 expectations fail that step. No separate advisory job or production ESLint scan is
 introduced. A hosted Actions run was not triggered from this implementation branch.

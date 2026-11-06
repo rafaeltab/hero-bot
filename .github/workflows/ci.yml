@@ -1,12 +1,13 @@
-name: Baseline engineering checks
+name: CI
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
 jobs:
   baseline:
-    name: Lint, architecture, types, tests and fresh coverage
+    name: Checks
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:

@@ -51,9 +51,12 @@ pnpm check       # all baseline checks above
 ```
 
 GitHub Actions runs each baseline check as a failing-on-error step. An administrator
-must require `Lint, types, tests and fresh coverage` in branch protection/rulesets;
+must require `Checks` (workflow `CI`) in branch protection/rulesets;
 workflow configuration cannot enable that repository setting. Hosted execution has
 not been observed by this local implementation.
+
+Workflows run once per pull-request update and on pushes to `main`, avoiding duplicate
+branch-push and pull-request checks. `Mutations / Advisory` remains nonblocking.
 
 Coverage enforces **90% statements and 90% branches**, includes unimported production
 source and subprocess execution, and remaps compiled code through TypeScript source

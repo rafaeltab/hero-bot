@@ -1,13 +1,13 @@
-name: Advisory mutation analysis
+name: Mutations
 on:
   pull_request:
   push:
-    branches: [main, t3/scaffold-foundation-integration]
+    branches: [main]
 permissions:
   contents: read
 jobs:
   mutation-advisory:
-    name: Advisory changed-code mutations (not a merge gate)
+    name: Advisory
     continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 20

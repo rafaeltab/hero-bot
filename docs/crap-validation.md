@@ -23,7 +23,7 @@ verify the installed provider and Effect 4.1.2 behavior.
 - `pnpm check`: lint, types, application tests, gate tests and the full coverage gate.
 
 GitHub Actions adds the fixture tests and invokes the combined gate through the
-existing blocking baseline job; its branch-protection name is unchanged. Requiring
+existing blocking baseline job (now named `CI / Checks`). Requiring
 that job in repository rulesets remains operator setup. No hosted CI run is claimed.
 
 ## Metric and attribution
