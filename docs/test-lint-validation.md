@@ -96,3 +96,23 @@ recognize the method name without proving the receiver is a Promise.
 
 This slice does not certify architecture, adapters, CRAP attribution, mutation
 selection or the full scaffold; those remain sibling work on the integration branch.
+
+## Final local validation
+
+Both local and freshly fetched remote integration tips were merged into the feature
+branch before the final checks; both still resolved to
+`8729ae8063be4038abef2a745639cb1539f68015` (already contained). Frozen installation
+and `pnpm check` passed: 13 lint-fixture tests, real application-test linting, Biome,
+TypeScript, six application tests, and freshly regenerated coverage. Coverage remains
+93.75% statements and 100% branches; the baseline has no instrumented production
+branches, so that branch percentage is vacuous. No production scoring exclusions
+were added. Typecheck/test tasks reused valid Turbo cache entries on the final
+rerun; the earlier full run executed them, and coverage reruns all six tests uncached.
+
+Coordination: merge this branch with a fresh merger into
+`t3/scaffold-foundation-integration`. Shared edits are root `package.json`,
+`pnpm-lock.yaml`, and the appended workspace-validation pointer. Retain sibling gate
+scripts while combining the `lint` command; regenerate the lockfile with pinned pnpm
+if another ticket adds dependencies. No workflow edits are necessary: retain the
+existing blocking `pnpm lint` step. No PR was opened, integration branch changed,
+issue closed, or PR watch started by this slice.
