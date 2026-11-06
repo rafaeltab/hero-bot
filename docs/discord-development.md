@@ -140,3 +140,21 @@ thresholds; 19 production functions scored at most 6. The composition generator
 and sanitized error getter are exercised in process, rather than borrowing their
 subprocess coverage. The original empty baseline timer callback remains unexecuted
 in the source-only report and honestly scores 2.
+
+Final reconciliation merged local and fetched remote integration tip
+`5678c18cb45622aeecc21c308d8d5aa6c1c364bb` (including #18) into this feature branch.
+Frozen strict-peer installation and `TURBO_FORCE=true pnpm check` passed on the
+combined code with zero cached Turbo tasks, using an owned disposable
+`postgres:17.6-alpine` container for the newly integrated PostgreSQL tests.
+All **34** tests passed in both coverage runs; coverage was **97.60% statements**
+and **100% instrumented branches**. All **32** production functions passed CRAP
+(maximum **5.2**). The adapter's lifetime generator has **80% own statement
+coverage**; the gate reports that directly rather than borrowing file coverage.
+Coverage percentages do not establish all logical paths were exercised.
+
+The root TypeScript `HERO_ENV=development pnpm dev` command was separately exercised
+without Discord credentials: it selected `--discord-development`, reported the
+sanitized configuration error and exited nonzero before connecting. A live Discord
+handshake remains unrun. No integration merge, PR creation, issue closure or PR
+watch was performed by this slice. The parent should use a fresh merger and retain
+the sibling PostgreSQL service/test environment and all existing gates.
