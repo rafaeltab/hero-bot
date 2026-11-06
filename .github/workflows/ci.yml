@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   baseline:
-    name: Lint, types, tests and fresh coverage
+    name: Lint, architecture, types, tests and fresh coverage
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -19,6 +19,7 @@ jobs:
           version: 12.16.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm architecture
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm coverage

@@ -15,10 +15,12 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "coverage": "turbo run coverage --force && node scripts/check-coverage.mjs",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm coverage"
+    "check": "pnpm lint && pnpm architecture && pnpm typecheck && pnpm test && pnpm coverage",
+    "architecture": "depcruise --config .dependency-cruiser.cjs --output-type err apps/discord-bot/src && node scripts/check-architecture-fixtures.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",
+    "dependency-cruiser": "18.7.2",
     "turbo": "2.11.10",
     "typescript": "6.0.3"
   }

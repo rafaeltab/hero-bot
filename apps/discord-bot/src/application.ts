@@ -1,12 +1,14 @@
-import { Config, Console, Effect, Layer } from "effect";
+import { Console, Effect, Layer } from "effect";
+
+import { EnvironmentFromConfig } from "./adapters/environment-config.ts";
+import { RuntimeStatus } from "./capabilities/runtime-status/contract.ts";
+import { RuntimeStatusLive } from "./capabilities/runtime-status/implementation.ts";
 
 // Until external adapters are wired, a scoped timer owns the process lifetime.
 const Lifetime = Layer.effectDiscard(
   Effect.gen(function* () {
-    const environment = yield* Config.Literals(
-      ["development", "production"],
-      "HERO_ENV",
-    );
+    const status = yield* RuntimeStatus;
+    const description = yield* status.describe;
     yield* Effect.acquireRelease(
       Effect.sync(() => setInterval(() => {}, 60_000)),
       (timer) =>
@@ -14,9 +16,13 @@ const Lifetime = Layer.effectDiscard(
           Effect.andThen(Console.log("hero-bot stopped")),
         ),
     );
-    yield* Console.log(`hero-bot started (${environment})`);
+    yield* Console.log(description);
   }),
 );
 
 /** Runs until interrupted; interruption waits for scoped resources to finalize. */
-export const application = Layer.launch(Lifetime);
+export const application = Layer.launch(
+  Lifetime.pipe(
+    Layer.provide(RuntimeStatusLive.pipe(Layer.provide(EnvironmentFromConfig))),
+  ),
+);
