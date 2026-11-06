@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { ConfigProvider, Console, Deferred, Effect, Fiber } from "effect";
+import { vi } from "vitest";
 import { application, applicationForDevelopment } from "../src/application.js";
 import { DiscordUnavailable } from "../src/capabilities/discord-connection/contract.ts";
 
@@ -80,4 +81,40 @@ it.effect(
     Effect.sync(() => {
       expect(applicationForDevelopment(false)).toBe(application);
     }),
+);
+
+it.live("disposes its active lifetime timer when interrupted", () =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    }),
+    () =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const baseline = vi.getTimerCount();
+        const fiber = yield* application.pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({ HERO_ENV: "development" }),
+            ),
+          ),
+          Effect.provideService(Console.Console, {
+            ...console,
+            log: () => {
+              Deferred.doneUnsafe(started, Effect.void);
+            },
+          }),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(started).pipe(Effect.timeout("1 second"));
+        expect(vi.getTimerCount()).toBeGreaterThan(baseline);
+        yield* Fiber.interrupt(fiber);
+        expect(vi.getTimerCount()).toBe(baseline);
+      }),
+    () =>
+      Effect.sync(() => {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      }),
+  ),
 );

@@ -184,6 +184,10 @@ it.live.each([
   { ...settings, HERO_ENV: "production" },
   { ...settings, DEV_DISCORD_BOT_TOKEN: "" },
   { ...settings, DEV_DISCORD_APPLICATION_ID: "invalid" },
+  { ...settings, DEV_DISCORD_APPLICATION_ID: "x123" },
+  { ...settings, DEV_DISCORD_APPLICATION_ID: "123x" },
+  { ...settings, DEV_DISCORD_GUILD_ID: "x456" },
+  { ...settings, DEV_DISCORD_GUILD_ID: "456x" },
   { ...settings, DEV_DISCORD_GUILD_ID: "" },
 ])("rejects invalid development configuration before dialing: %j", (config) =>
   Effect.gen(function* () {
@@ -193,6 +197,7 @@ it.live.each([
       new DiscordUnavailable({ reason: "configuration" }),
     );
     expect(socket.readyState).toBe(0);
+    expect(socket.requests).toEqual([]);
     expect(JSON.stringify(failure)).not.toContain("offline-secret");
     expect(failure.message).toBe(
       "Development Discord unavailable (configuration)",
@@ -243,5 +248,20 @@ it.live(
         "https://discord.com/api/v10/gateway/bot",
       ]);
       expect(socket.readyState).toBe(0);
+    }),
+);
+
+it.live(
+  "rejects exactly one unexpected guild and releases the connection",
+  () =>
+    Effect.gen(function* () {
+      const socket = new GatewaySocket();
+      socket.guilds = [{ id: "999", unavailable: true }];
+      const failure = yield* connect(socket).pipe(
+        Effect.timeout("1 second"),
+        Effect.flip,
+      );
+      expect(failure).toEqual(new DiscordUnavailable({ reason: "identity" }));
+      expect(socket.closed).toBe(true);
     }),
 );

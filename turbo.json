@@ -28,5 +28,9 @@
       "outputs": ["coverage/**"]
     }
   },
-  "globalPassThroughEnv": ["GITHUB_STEP_SUMMARY", "TMPDIR"]
+  "globalPassThroughEnv": [
+    "GITHUB_STEP_SUMMARY",
+    "TMPDIR",
+    "__STRYKER_ACTIVE_MUTANT__"
+  ]
 }

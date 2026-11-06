@@ -60,7 +60,12 @@ it("executes the separate development entrypoint and fails safely without develo
     ["dist/main.js", "--discord-development"],
     {
       cwd: new URL("..", import.meta.url),
-      env: { HERO_ENV: "development" },
+      // Preserve mutation activation in the compiled child without forwarding
+      // development credentials or other service environment configuration.
+      env: {
+        HERO_ENV: "development",
+        __STRYKER_ACTIVE_MUTANT__: process.env.__STRYKER_ACTIVE_MUTANT__,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

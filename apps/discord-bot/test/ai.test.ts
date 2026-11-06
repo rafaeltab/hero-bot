@@ -116,6 +116,7 @@ it.effect.each([
   { HERO_AI_MODEL: "model" },
   { HERO_AI_API_KEY: "secret" },
   { HERO_AI_API_KEY: "", HERO_AI_MODEL: "model" },
+  { HERO_AI_API_KEY: " \t ", HERO_AI_MODEL: "model" },
   { HERO_AI_API_KEY: "secret", HERO_AI_MODEL: "  " },
 ])(
   "rejects absent or blank provider configuration before any request",
@@ -124,7 +125,8 @@ it.effect.each([
       let calls = 0;
       const failure = yield* Effect.flip(
         Effect.gen(function* () {
-          yield* TextGeneration;
+          const ai = yield* TextGeneration;
+          yield* ai.generate("invalid configuration must not reach transport");
         }).pipe(
           Effect.provide(
             openAITextLive({
