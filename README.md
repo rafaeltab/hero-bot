@@ -1,42 +1,43 @@
 # Hero Bot
 
-This workspace runs a persistent Effect application offline. Discord connections and
-moderation workflows belong to later tickets.
+This workspace includes an opt-in dfx development connection and a separate offline
+process baseline. It implements no moderation workflows.
 
-Install Node **24.22.2** (`.node-version` / `.nvmrc`) and pnpm **12.16.1**
-(`npm install --global pnpm@12.16.1`), then run from the repository root:
+Install Node **24.22.2** and pnpm **12.16.1**, then run:
 
 ```sh
 pnpm install --frozen-lockfile
 cp apps/discord-bot/.env.example apps/discord-bot/.env
+# Fill the ignored .env with a separate development application's bot token,
+# application ID and dedicated test-server ID (see setup link below).
 pnpm dev
 ```
 
-The process prints `hero-bot started (development)` and stays running. Ctrl+C or
-SIGTERM interrupts the main Effect, releases its scoped timer, and prints
-`hero-bot stopped`. The published Effect Node runner exits **130** for interruption,
-including graceful SIGINT/SIGTERM shutdown. Invalid configuration exits nonzero
-before startup. The timer owns the offline process lifetime until adapters are wired.
+Development connects through dfx, checks the READY application and sole server,
+prints `development Discord ready`, and stays running. Ctrl+C or SIGTERM closes the
+scoped connection and prints `development Discord stopped`; Effect's Node runner
+exits **130** for interruption. Missing configuration fails before connecting;
+startup without READY fails after 15 seconds. Node runs TypeScript directly;
+restart manually after edits.
 
-For an independent production configuration:
+See [Discord development setup and verification](docs/discord-development.md) for
+separate identity/server setup, controlled evidence, live smoke steps and limitations.
+Secrets belong only in environment configuration or the ignored `.env`. CI requires
+no live Discord credentials. Do not use a production bot token or invite this bot to
+the real server.
+
+The existing offline process baseline remains available independently:
 
 ```sh
 pnpm build
-HERO_ENV=production pnpm start
+HERO_ENV=development pnpm start
 ```
 
-`HERO_ENV` is required: `development` or `production`. Both run commands read an
-optional `apps/discord-bot/.env`; existing environment values take precedence.
-Keep development `.env` files out of production artifacts and supply production
-configuration through the operator's process environment. This setting labels the
-application lifetime; it does not provision or connect a bot identity.
-
-Development must eventually use a separate Discord application, bot identity,
-credentials and test server from production. The integration ticket owns this setup.
-When its adapter exists, supply secrets such as `DISCORD_BOT_TOKEN` through the
-environment or an operator-managed secret store. Never commit or log credentials,
-or reuse production credentials in development. CI needs no Discord, database or
-paid AI access. The offline dfx test's placeholder is not a credential.
+It prints `hero-bot started (development)` and releases its timer on shutdown.
+`HERO_ENV=production pnpm start` labels that same offline baseline; this does not
+connect or deploy a production bot. Both app scripts read an optional ignored `.env`,
+with existing environment values taking precedence. Keep development `.env` files
+out of production artifacts. Hosting and production configuration remain undecided.
 
 ```sh
 pnpm lint        # Biome lint and formatting check

@@ -7,7 +7,12 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "env": ["HERO_ENV"]
+      "env": [
+        "HERO_ENV",
+        "DEV_DISCORD_BOT_TOKEN",
+        "DEV_DISCORD_APPLICATION_ID",
+        "DEV_DISCORD_GUILD_ID"
+      ]
     },
     "typecheck": {},
     "test": {
