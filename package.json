@@ -14,8 +14,10 @@
     "format": "biome check --write .",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "coverage": "turbo run coverage --force && node scripts/check-coverage.mjs",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm coverage"
+    "coverage": "node scripts/run-coverage.mjs",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:crap && pnpm coverage",
+    "test:crap": "node --test scripts/test/*.test.mjs",
+    "crap": "node scripts/check-crap.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",
