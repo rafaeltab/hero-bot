@@ -11,7 +11,9 @@
         "HERO_ENV",
         "DEV_DISCORD_BOT_TOKEN",
         "DEV_DISCORD_APPLICATION_ID",
-        "DEV_DISCORD_GUILD_ID"
+        "DEV_DISCORD_GUILD_ID",
+        "HERO_AI_API_KEY",
+        "HERO_AI_MODEL"
       ]
     },
     "typecheck": {},
