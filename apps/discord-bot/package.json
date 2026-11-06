@@ -1,0 +1,29 @@
+{
+  "name": "@hero-bot/discord-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "node --env-file-if-exists=.env --experimental-strip-types src/main.ts --discord-development",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "4.0.109",
+    "@effect/platform-node": "4.1.2",
+    "ai": "7.0.163",
+    "dfx": "1.1.1",
+    "drizzle-orm": "0.45.4",
+    "effect": "4.1.2",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.2",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "@vitest/coverage-v8": "5.1.0",
+    "vitest": "5.1.0"
+  }
+}

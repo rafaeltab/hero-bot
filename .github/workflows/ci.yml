@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    name: Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: hero_test
+          POSTGRES_PASSWORD: hero_test
+          POSTGRES_DB: hero_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hero_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HERO_TEST_DATABASE_URL: postgresql://hero_test:hero_test@127.0.0.1:5432/hero_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 12.16.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm architecture
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:crap
+      - run: pnpm coverage # fresh 90/90 coverage and validated per-function CRAP <=30
