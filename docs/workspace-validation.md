@@ -101,3 +101,8 @@ exceptions, blocking commands, fixtures and downstream integration guidance. The
 Test-only ESLint enforcement and its fixture evidence are documented in
 [test lint validation](test-lint-validation.md) (#22). `pnpm lint` now also runs
 those checks within the existing blocking CI job.
+
+Advisory changed-production-line mutation analysis and its independently executed
+scoping, coverage selection, static/integration fallback and cache fixtures are
+documented in [mutation validation](mutation-validation.md) (#23). Mutation scores
+remain outside the blocking baseline.
