@@ -148,3 +148,26 @@ retained when merging sibling #17/#22/#23 work. No new package dependencies or l
 changes are needed. `coverage` remains the required command; avoid replacing it with
 bare `turbo run coverage`, which lacks receipts and CRAP validation. The parent
 merger owns integration into `t3/scaffold-foundation-integration` and PR #24.
+
+## Final integration validation
+
+Before handoff, merged both local and fetched remote integration refs. Integration
+had advanced to `4d24c6638d1611c83367f4d96d7f85c150a2a41c` with #17 and #22.
+Resolved the root script conflict by retaining architecture, test-specific ESLint,
+their fixture runners, all original checks, and the new CRAP commands. Their
+production changes require no scorer exceptions or additional exclusions.
+
+Frozen installation with strict peers and `TURBO_FORCE=true pnpm check` passed on
+that combined branch: Biome, 13 test-lint fixture tests, 12 architecture graphs,
+TypeScript (including CRAP configs/fixtures), nine application tests, 14 CRAP/evidence
+checks, fresh baseline coverage and source attribution. Turbo tasks executed with
+zero cache hits. Final baseline is 30/31 statements (96.77%) and 100% branches
+(zero instrumented branches). Eight runtime production functions score at most 2;
+the same unexecuted empty timer callback scores 2, the other seven score 1.
+Context-service/error classes without explicit function bodies have no functions
+to score; their production files remain inventoried in baseline coverage.
+
+The implementation commit is `58c52e63dbef3ae267c354ae8c69bd904a18ae95`;
+`8afce365270cabf386295a820b5c95ec4f8c8f7d` merges the integrated sibling work.
+No integration branch merge, PR creation, issue closure, or PR watch was performed.
+The parent should merge the completed feature branch using its fresh merger.
