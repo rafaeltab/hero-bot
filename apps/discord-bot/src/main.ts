@@ -1,4 +1,6 @@
 import { NodeRuntime } from "@effect/platform-node";
-import { application } from "./application.ts";
+import { applicationForDevelopment } from "./application.ts";
 
-NodeRuntime.runMain(application);
+NodeRuntime.runMain(
+  applicationForDevelopment(process.argv.includes("--discord-development")),
+);

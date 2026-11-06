@@ -53,3 +53,36 @@ it.each(["SIGTERM", "SIGINT"] as const)(
     }
   },
 );
+
+it("executes the separate development entrypoint and fails safely without development credentials", async () => {
+  const child = spawn(
+    process.execPath,
+    ["dist/main.js", "--discord-development"],
+    {
+      cwd: new URL("..", import.meta.url),
+      env: { HERO_ENV: "development" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let output = "";
+  let errors = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk) => {
+    output += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk) => {
+    errors += chunk;
+  });
+  try {
+    const code = await new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", resolve);
+    });
+    expect(code).toBe(1);
+    expect(output).toContain("DiscordUnavailable");
+    expect(output).toContain("configuration");
+    expect(output).not.toContain("development Discord ready");
+    expect(errors).toBe("");
+  } finally {
+    child.kill("SIGKILL");
+  }
+});
