@@ -217,6 +217,17 @@ test("the CI lint command rejects isolated invalid files with exit 1", async () 
     const path = `${directory}/case.ts`;
     for (const [form, body, expected] of [
       ["it.live", "expect(2).toBe(2);", null],
+      ["it", "await expect.poll(() => 2).toBe(2);", null],
+      [
+        "it",
+        "expect.poll(() => 2).toBe(2);",
+        "vitest/require-awaited-expect-poll",
+      ],
+      [
+        "it",
+        "if (enabled) await expect.poll(() => 2).toBe(2);",
+        "tests/no-conditional-assertions",
+      ],
       ["it.effect.only", "expect(2).toBe(2);", "tests/no-focused-tests"],
       ["it.live.skip", "expect(2).toBe(2);", "tests/no-skipped-tests"],
       ["it.effect.each([1])", "expect(2);", "vitest/valid-expect"],
@@ -320,4 +331,128 @@ test("returning an async assertion from a generator is not awaiting it", async (
     ),
     ["vitest/valid-expect"],
   );
+});
+
+test("unawaited polling assertions fail in every supported form and import alias", async () => {
+  for (const form of forms) {
+    for (const helper of ["expect", "verify"]) {
+      const code = source(
+        form,
+        "poll",
+        `${helper}.poll(() => 2).toBe(2);`,
+      ).replace(
+        "it, expect",
+        helper === "verify" ? "it, expect as verify" : "it, expect",
+      );
+      assert.deepEqual(await messages(code), [
+        "vitest/require-awaited-expect-poll",
+      ]);
+    }
+  }
+});
+
+test("conditional polling assertions fail including the reported awaited example", async () => {
+  assert.deepEqual(
+    await messages(
+      source(
+        "it",
+        "conditional poll",
+        "if (enabled) await expect.poll(() => 2).toBe(2);",
+      ),
+    ),
+    ["tests/no-conditional-assertions"],
+  );
+  for (const form of forms) {
+    for (const body of [
+      "if (enabled) POLL",
+      "enabled && POLL",
+      "enabled ? POLL : undefined",
+      "try {} catch { POLL }",
+      "for (const value of values) { POLL }",
+      "Promise.resolve(2).catch(() => { POLL });",
+    ]) {
+      const bodyWithPoll = body.replace(
+        "POLL",
+        "await verify.poll(() => 2).toBe(2)",
+      );
+      const code = source(
+        form,
+        "conditional poll",
+        form.includes("effect") || form.includes("live")
+          ? `yield* Effect.promise(async () => { ${bodyWithPoll} });`
+          : bodyWithPoll,
+      ).replace("it, expect", "it, expect as verify");
+      assert.deepEqual(await messages(code), [
+        "tests/no-conditional-assertions",
+      ]);
+    }
+  }
+});
+
+test("awaited polling passes for ordinary and Effect tests, aliases and negation", async () => {
+  for (const form of forms) {
+    for (const helper of ["expect", "verify"]) {
+      const assertion = `await ${helper}.poll(() => 2).not.toBe(3);`;
+      const body =
+        form.includes("effect") || form.includes("live")
+          ? `yield* Effect.promise(async () => { ${assertion} });`
+          : assertion;
+      const code = source(form, "awaited poll", body).replace(
+        "it, expect",
+        helper === "verify" ? "it, expect as verify" : "it, expect",
+      );
+      assert.deepEqual(await messages(code), []);
+    }
+  }
+  assert.deepEqual(
+    await messages(
+      'import { expect } from "@effect/vitest"; function helper(expect) { if (enabled) expect.poll(() => 2).toBe(2); }',
+    ),
+    [],
+  );
+});
+
+test("returning a polling assertion from an Effect generator does not await it", async () => {
+  for (const form of forms.filter(
+    (form) => form.includes("effect") || form.includes("live"),
+  )) {
+    assert.deepEqual(
+      await messages(
+        source(form, "returned poll", "return expect.poll(() => 2).toBe(2);"),
+      ),
+      ["tests/no-generator-poll-return"],
+    );
+  }
+});
+
+test("polling return semantics and both approved import sources are verified", async () => {
+  for (const packageName of ["vitest", "@effect/vitest"]) {
+    const imports = `import { it as scenario, expect as verify } from "${packageName}";`;
+    for (const [body, expected] of [
+      ["verify.poll(() => 2).toBe(2);", ["vitest/require-awaited-expect-poll"]],
+      ["await verify.poll(() => 2).toBe(2);", []],
+      ["return verify.poll(() => 2).toBe(2);", []],
+      [
+        "if (enabled) await verify.poll(() => 2).toBe(2);",
+        ["tests/no-conditional-assertions"],
+      ],
+    ]) {
+      assert.deepEqual(
+        await messages(`${imports} scenario("poll", async () => { ${body} });`),
+        expected,
+      );
+    }
+    assert.deepEqual(
+      await messages(
+        `${imports} scenario("implicit poll", () => verify.poll(() => 2).toBe(2));`,
+      ),
+      ["vitest/require-awaited-expect-poll"],
+    );
+    assert.deepEqual(
+      await messages(
+        `${imports} scenario.effect("returned poll", () => Effect.gen(function* () { return verify.poll(() => 2).toBe(2); }));`,
+      ),
+      ["tests/no-generator-poll-return"],
+    );
+  }
 });

@@ -10,6 +10,8 @@ export default [
     plugins: { vitest, tests },
     rules: {
       "tests/no-conditional-assertions": "error",
+      "vitest/require-awaited-expect-poll": "error",
+      "tests/no-generator-poll-return": "error",
       "vitest/valid-expect": ["error", { alwaysAwait: true }],
       "tests/no-duplicate-titles": "error",
       "tests/no-skipped-tests": "error",

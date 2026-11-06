@@ -11,7 +11,8 @@ The prepared branch contained integration tip
 - `node --test scripts/test-lint/check.test.mjs`: fixtures alone.
 - `pnpm check`: existing Biome, type, test and fresh coverage checks, plus test linting.
 
-The existing blocking GitHub Actions baseline job already executes `pnpm lint`;
+The blocking GitHub Actions `baseline` job, named
+**Lint, architecture, types, tests and fresh coverage**, executes `pnpm lint`;
 that command now includes `lint:tests`. Both real-test violations and broken fixture
 expectations fail that step. No separate advisory job or production ESLint scan is
 introduced. A hosted Actions run was not triggered from this implementation branch.
@@ -32,18 +33,25 @@ bodies (Effect callbacks return `Effect.gen`). `test` is also recognized, and
 `describe`/`suite` delimit title scopes. Use a static string or interpolation-free
 template for registration titles. The approved assertion helper is `expect(value)`
 imported from either package, including matcher calls, `.not`, `.resolves` and
-`.rejects`. Await asynchronous assertions in ordinary async tests; inside an Effect
+`.rejects`, plus `expect.poll(callback)` with matchers and `.not`.
+Await polling explicitly, including in Effect callbacks:
+`yield* Effect.promise(async () => { await expect.poll(callback).toEqual(value); })`.
+The installed polling rule rejects implicit arrow returns; explicit returns are
+accepted by that rule, but a generator return does not await a Promise and is
+rejected by the local generator guard. Await asynchronous assertions in ordinary async tests; inside an Effect
 use `yield* Effect.promise(() => expect(promise).resolves.matcher(...))`.
 Existing application tests remain the behavioral evidence for the application.
 These lint fixtures verify lint diagnostics, not application behavior.
 
-| Enabled rule                      | Enforcement                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/no-focused-tests`          | Reject `.only` on tests/suites, including chained Effect and each registrations, and enabled inline `only` options.                                                                                                                                                                                                                                                                         |
-| `tests/no-skipped-tests`          | Reject `.skip`, `.todo`, `.skipIf`, `.runIf`, missing callbacks, and enabled inline `skip`/`todo` options. Conditional registration is rejected conservatively without evaluating its condition.                                                                                                                                                                                            |
-| `tests/no-duplicate-titles`       | Reject repeated static test titles or suite titles in the same suite, including repeated each declarations. Separate suites may reuse test titles.                                                                                                                                                                                                                                          |
-| `vitest/valid-expect`             | Reject missing arguments/matchers, uncalled matchers, invalid modifier chains and unawaited async assertions (`alwaysAwait: true`). Explicit return statements are rejected conservatively, including generator returns that would not await the assertion; implicit arrow returns remain supported for `Effect.promise`. TypeScript additionally checks matcher names/types in real tests. |
-| `tests/no-conditional-assertions` | Reject imported `expect` calls under if/switch/catch/loops, conditional branches, short-circuit right operands, and `.catch` callbacks, including inside Effect generators and local helpers.                                                                                                                                                                                               |
+| Enabled rule                         | Enforcement                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/no-focused-tests`             | Reject `.only` on tests/suites, including chained Effect and each registrations, and enabled inline `only` options.                                                                                                                                                                                                                                                                         |
+| `tests/no-skipped-tests`             | Reject `.skip`, `.todo`, `.skipIf`, `.runIf`, missing callbacks, and enabled inline `skip`/`todo` options. Conditional registration is rejected conservatively without evaluating its condition.                                                                                                                                                                                            |
+| `tests/no-duplicate-titles`          | Reject repeated static test titles or suite titles in the same suite, including repeated each declarations. Separate suites may reuse test titles.                                                                                                                                                                                                                                          |
+| `vitest/valid-expect`                | Reject missing arguments/matchers, uncalled matchers, invalid modifier chains and unawaited async assertions (`alwaysAwait: true`). Explicit return statements are rejected conservatively, including generator returns that would not await the assertion; implicit arrow returns remain supported for `Effect.promise`. TypeScript additionally checks matcher names/types in real tests. |
+| `vitest/require-awaited-expect-poll` | Reject unawaited polling assertions, including aliases and every supported Effect form. Explicitly await polls inside `Effect.promise` async callbacks.                                                                                                                                                                                                                                     |
+| `tests/no-generator-poll-return`     | Reject returning a polling assertion from a generator; the upstream polling rule accepts returns without checking whether the function awaits them.                                                                                                                                                                                                                                         |
+| `tests/no-conditional-assertions`    | Reject imported `expect` and `expect.poll` calls under if/switch/catch/loops, conditional branches, short-circuit right operands, and `.catch` callbacks, including inside Effect generators and local helpers.                                                                                                                                                                             |
 
 The local ESLint rules resolve import bindings through ESLint scope information;
 shadowed names and unrelated functions do not become test registrations. The
@@ -136,3 +144,18 @@ fresh coverage ran with zero Turbo cache hits. Coverage validation passed at
 source/compiled statement attribution limitation remains. No production behavior,
 coverage exclusions, thresholds, or enforcement rules changed during integration.
 No hosted Actions run or live external integration was performed.
+
+## Scaffold review fixes
+
+The two review probes initially produced zero diagnostics: an unawaited
+`expect.poll(() => 2).toBe(2)` and a conditional
+`if (enabled) await expect.poll(() => 2).toBe(2)`. Failing fixtures reproduced
+both gaps before enabling the installed polling rule and extending local helper
+recognition. A further failing fixture exposed generator-returned polls; the
+local generator guard closes the upstream return exemption for that case.
+
+The matrix now verifies polling failures, aliases, conditional control flow,
+awaited and negated positives across all six supported registration forms, plus
+shadowed helpers. CLI fixtures verify exit 1 for both reported examples and exit
+0 for awaited polling. Real PostgreSQL tests use explicit async/await callbacks
+and still observe database sessions before and after scoped operations.

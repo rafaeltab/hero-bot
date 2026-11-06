@@ -67,13 +67,48 @@ const rule = (message, create) => ({
 
 export default {
   rules: {
+    // The upstream poll rule accepts any return, but generator returns are values,
+    // not awaited promises. Effect.gen therefore needs this additional guard.
+    "no-generator-poll-return": rule(
+      "Await polling assertions inside Effect.promise instead of returning them from a generator.",
+      (context) => ({
+        ReturnStatement(node) {
+          if (!node.argument) return;
+          const call = chain(node.argument);
+          if (
+            !call ||
+            importedName(context, call.root) !== "expect" ||
+            call.members[0] !== "poll"
+          )
+            return;
+          for (let parent = node.parent; parent; parent = parent.parent) {
+            if (
+              [
+                "FunctionExpression",
+                "FunctionDeclaration",
+                "ArrowFunctionExpression",
+              ].includes(parent.type)
+            ) {
+              if (parent.generator)
+                context.report({ node, messageId: "invalid" });
+              return;
+            }
+          }
+        },
+      }),
+    ),
     "no-conditional-assertions": rule(
       "Assertions must not be conditional, caught or inside loops.",
       (context) => ({
         CallExpression(node) {
+          const call = chain(node.callee);
           if (
-            node.callee.type !== "Identifier" ||
-            importedName(context, node.callee) !== "expect"
+            !call ||
+            importedName(context, call.root) !== "expect" ||
+            !(
+              call.members.length === 0 ||
+              (call.members.length === 1 && call.members[0] === "poll")
+            )
           )
             return;
           let child = node;

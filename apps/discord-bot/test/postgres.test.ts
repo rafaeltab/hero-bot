@@ -97,6 +97,14 @@ const observeSessions = Effect.acquireRelease(
   (client) => Effect.promise(() => client.end()),
 );
 
+async function sessionCounts(observer: Client, name: string) {
+  const result = await observer.query<{ count: number }>(
+    "select count(*)::int as count from pg_stat_activity where application_name = $1",
+    [name],
+  );
+  return result.rows;
+}
+
 it.effect.each([false, true])(
   "releases PostgreSQL sessions after scope exit (query failure: %s)",
   (fail) =>
@@ -109,12 +117,9 @@ it.effect.each([false, true])(
         const operation = Effect.gen(function* () {
           const probe = yield* PersistenceProbe;
           const sessions = yield* Effect.promise(() =>
-            observer.query<{ count: number }>(
-              "select count(*)::int as count from pg_stat_activity where application_name = $1",
-              [name],
-            ),
+            sessionCounts(observer, name),
           );
-          expect(sessions.rows).toEqual([{ count: 1 }]);
+          expect(sessions).toEqual([{ count: 1 }]);
           yield* probe.roundTrip(fail ? Number.NaN : 42);
         }).pipe(
           Effect.provide(PostgresProbeLive),
@@ -127,17 +132,11 @@ it.effect.each([false, true])(
         );
         const outcome = yield* operation;
         expect(outcome._tag).toBe(fail ? "Failure" : "Success");
-        yield* Effect.promise(() =>
-          expect
-            .poll(async () => {
-              const result = await observer.query(
-                "select count(*)::int as count from pg_stat_activity where application_name = $1",
-                [name],
-              );
-              return result.rows;
-            })
-            .toEqual([{ count: 0 }]),
-        );
+        yield* Effect.promise(async () => {
+          await expect
+            .poll(() => sessionCounts(observer, name))
+            .toEqual([{ count: 0 }]);
+        });
       }),
     ),
 );
@@ -166,17 +165,11 @@ it.effect("interruption awaits pool cleanup before the fiber exits", () =>
       );
       yield* Deferred.await(started);
       yield* Fiber.interrupt(fiber);
-      yield* Effect.promise(() =>
-        expect
-          .poll(async () => {
-            const result = await observer.query(
-              "select count(*)::int as count from pg_stat_activity where application_name = $1",
-              [name],
-            );
-            return result.rows;
-          })
-          .toEqual([{ count: 0 }]),
-      );
+      yield* Effect.promise(async () => {
+        await expect
+          .poll(() => sessionCounts(observer, name))
+          .toEqual([{ count: 0 }]);
+      });
     }),
   ),
 );
@@ -197,17 +190,11 @@ it.effect("survives PostgreSQL closing an idle pooled session", () =>
           ),
         );
         // Wait for the server to acknowledge termination before requesting a replacement.
-        yield* Effect.promise(() =>
-          expect
-            .poll(async () => {
-              const result = await observer.query(
-                "select count(*)::int as count from pg_stat_activity where application_name = $1",
-                [name],
-              );
-              return result.rows;
-            })
-            .toEqual([{ count: 0 }]),
-        );
+        yield* Effect.promise(async () => {
+          await expect
+            .poll(() => sessionCounts(observer, name))
+            .toEqual([{ count: 0 }]);
+        });
         expect(yield* probe.roundTrip(21)).toBe(21);
       }).pipe(
         Effect.provide(PostgresProbeLive),
