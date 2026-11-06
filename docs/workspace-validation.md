@@ -92,3 +92,7 @@ without adding secret values. Development runs TypeScript directly with Node's
 type stripping and needs manual restart after edits. Optional Node `--watch` was
 removed after repeated native `FSWatcher.close` assertions on Ctrl+C with this pinned
 runtime; watch mode is not required for the persistent-process baseline.
+
+Test-only ESLint enforcement and its fixture evidence are documented in
+[test lint validation](test-lint-validation.md) (#22). `pnpm lint` now also runs
+those checks within the existing blocking CI job.
