@@ -66,10 +66,10 @@ Temporary failure probes were restored before final checks:
 
 ## Coordination and external setup
 
-Architecture checks (#17), validated CRAP (#18), test-specific linting (#19), mutation
-analysis (#20), and real integration verification (#21–#23) remain sibling work. This
-baseline does not certify the whole scaffold. Extend the existing CI/scripts with
-those gates.
+Architecture checks (#17), PostgreSQL integration (#18), dfx integration (#19), AI
+integration (#20), validated CRAP (#21), test-specific linting (#22), and mutation
+analysis (#23) remain sibling work. This baseline does not certify the whole
+scaffold. Extend the existing CI/scripts with those gates.
 
 Production code lives in `apps/discord-bot/src`; tests under `test` are typechecked.
 Actual forms include `it.effect`, `it.effect.each`, `it.each` and ordinary `expect`.
