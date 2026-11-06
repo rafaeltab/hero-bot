@@ -8,3 +8,5 @@ coverage/
 reports/
 .stryker-tmp/
 .mutation-fixtures/
+coverage-crap/
+coverage-crap-fixtures/

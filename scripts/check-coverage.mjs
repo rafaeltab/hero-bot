@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
+import { productionSources } from "./coverage-evidence.mjs";
 
 const app = new URL("../apps/discord-bot/", import.meta.url);
 const report = JSON.parse(
   await readFile(new URL("coverage/coverage-summary.json", app), "utf8"),
 );
-const sources = (await readdir(new URL("src/", app), { recursive: true }))
-  .filter((name) => name.endsWith(".ts") && !name.endsWith(".d.ts"))
-  .map((name) => fileURLToPath(new URL(`src/${name}`, app)));
+const sources = await productionSources(process.cwd(), {
+  includeTypeOnly: true,
+});
 assert(sources.length > 0, "No production sources found");
 assert.deepEqual(
   Object.keys(report)
