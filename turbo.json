@@ -27,5 +27,6 @@
       "cache": false,
       "outputs": ["coverage/**"]
     }
-  }
+  },
+  "globalPassThroughEnv": ["GITHUB_STEP_SUMMARY", "TMPDIR"]
 }

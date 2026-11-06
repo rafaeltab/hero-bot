@@ -105,6 +105,30 @@ it('unrelated', () => { expect(untouched(4)).toBe(3); });
     assert.equal(initialization.static, true);
     assert.equal(initialization.testsCompleted, 3);
     assert.equal(initialization.status, "Killed");
+    const shardMutants = [];
+    for (let index = 1; index <= 2; index++) {
+      run("--selection", "per-test", "--shard", `${index}/2`);
+      const shard = JSON.parse(
+        readFileSync(
+          resolve(app, `reports/mutation/shard-${index}-of-2/mutation.json`),
+          "utf8",
+        ),
+      );
+      shardMutants.push(
+        ...Object.values(shard.files).flatMap((file) => file.mutants),
+      );
+    }
+    const identity = (mutant) =>
+      JSON.stringify([
+        mutant.location,
+        mutant.mutatorName,
+        mutant.replacement,
+        mutant.status,
+      ]);
+    assert.deepEqual(
+      shardMutants.map(identity).sort(),
+      mutants.map(identity).sort(),
+    );
     const firstCacheLog = run("--selection", "per-test", "--incremental");
     const reusedLog = run("--selection", "per-test", "--incremental");
     assert.match(reusedLog, /2 of 2 mutant result\(s\) are reused/);

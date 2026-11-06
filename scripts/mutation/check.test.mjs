@@ -46,6 +46,16 @@ test("plans only added production lines against an explicit base, including work
       "apps/discord-bot/test/value.test.ts",
       'throw new Error("never mutate tests");\n',
     );
+    for (const directory of ["__generated__", "test", "__tests__"]) {
+      put(
+        `apps/discord-bot/src/${directory}/value.ts`,
+        'export const excluded = "new";\n',
+      );
+    }
+    put(
+      "apps/discord-bot/src/type-only.ts",
+      "export interface Contract { value: string }\n",
+    );
     const output = JSON.parse(
       execFileSync(
         process.execPath,

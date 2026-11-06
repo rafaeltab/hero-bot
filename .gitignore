@@ -10,3 +10,5 @@ reports/
 .mutation-fixtures/
 coverage-crap/
 coverage-crap-fixtures/
+
+/mutation-summary.json

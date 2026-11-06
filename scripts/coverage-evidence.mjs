@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import ts from "typescript";
+export { productionSources } from "./production-policy.mjs";
 
 const excludedDirectories = new Set(["node_modules", ".git", ".turbo"]);
 const excludedOutputs = new Set([
@@ -92,51 +92,4 @@ export async function validateEvidence(root) {
     );
     JSON.parse(content.toString());
   }
-}
-
-/** Only agreed runtime TS inputs; new runtime extensions require deliberate support. */
-export async function productionSources(
-  root,
-  { includeTypeOnly = false } = {},
-) {
-  const directory = join(root, "apps/discord-bot/src");
-  const sources = [];
-  async function walk(path) {
-    for (const entry of await readdir(path, { withFileTypes: true })) {
-      const file = join(path, entry.name);
-      if (entry.name === "generated" || entry.name === "__tests__") continue;
-      assert(
-        !entry.isSymbolicLink(),
-        `Unsupported production symlink: ${file}`,
-      );
-      if (entry.isDirectory()) await walk(file);
-      else {
-        if (
-          entry.name.endsWith(".d.ts") ||
-          /\.(?:test|spec)\.ts$/.test(entry.name)
-        )
-          continue;
-        assert(
-          entry.name.endsWith(".ts"),
-          `Unsupported production input: ${file}`,
-        );
-        const source = await readFile(file, "utf8");
-        const emitted = ts.transpileModule(source, {
-          compilerOptions: {
-            target: ts.ScriptTarget.ESNext,
-            module: ts.ModuleKind.ESNext,
-            removeComments: true,
-          },
-        }).outputText;
-        if (
-          includeTypeOnly ||
-          emitted.replace(/export\s*\{\s*\};?/g, "").trim()
-        )
-          sources.push(file);
-      }
-    }
-  }
-  await walk(directory);
-  assert(sources.length > 0, "No runtime production sources");
-  return sources.sort();
 }

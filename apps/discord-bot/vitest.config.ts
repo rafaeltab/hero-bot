@@ -1,4 +1,9 @@
+import { createRequire } from "node:module";
 import { defineConfig } from "vitest/config";
+
+const { coverageExcludes } = createRequire(import.meta.url)(
+  "./tooling/production-policy.cjs",
+);
 
 export default defineConfig({
   test: {
@@ -8,13 +13,7 @@ export default defineConfig({
       autoAttachSubprocess: true,
       include: ["src/**/*.ts", "dist/**/*.js"],
       excludeAfterRemap: true,
-      exclude: [
-        "src/**/*.d.ts",
-        "src/**/generated/**",
-        "src/**/__tests__/**",
-        "src/**/*.test.ts",
-        "src/**/*.spec.ts",
-      ],
+      exclude: coverageExcludes,
       reporter: ["text", "json", "json-summary", "lcov"],
       clean: true,
       thresholds: { statements: 90, branches: 90 },
