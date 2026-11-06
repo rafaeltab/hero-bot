@@ -52,11 +52,10 @@ pnpm crap        # revalidate existing fresh CRAP evidence
 pnpm check       # all baseline checks above
 ```
 
-GitHub Actions runs each baseline check as a failing-on-error step. An administrator
-must require `Checks` (workflow `CI`) in branch protection/rulesets;
-workflow success alone does not enforce merge protection. Hosted checks have passed
-on earlier PR revisions, but the existing main ruleset is disabled. See the exact
-[administrator setup and permission limitation](docs/repository-protection.md).
+GitHub Actions runs baseline checks as failing-on-error steps. The existing main
+ruleset is **active** and requires **Checks** from workflow **CI** (GitHub Actions).
+Mutation jobs remain optional by the user's choice. See
+[verified protection status](docs/repository-protection.md).
 
 Workflows run once per pull-request update and on pushes to `main`, avoiding duplicate
 branch-push and pull-request checks. The four numbered mutation shards and `Mutations / Results` remain advisory; they
@@ -77,3 +76,7 @@ worked scores and source-mapping limitations.
 See [workspace versions](docs/workspace-validation.md), [current validation](docs/scaffold-validation.md),
 [mutation commands/results](docs/mutation-validation.md), and [shared source policy](docs/production-source-policy.md).
 [Evaluation conventions](evaluations/README.md) describe future AI artifacts.
+
+For upgrades and troubleshooting, use the short [toolchain maintenance guide](docs/toolchain-maintenance.md).
+The [survivor triage](docs/mutation-survivor-triage.md) distinguishes new regression
+tests, remaining behavioral gaps and currently nonobservable mutations.

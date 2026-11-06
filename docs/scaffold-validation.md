@@ -1,11 +1,11 @@
 # Scaffold verification
 
-The scaffold includes the workspace, enforced local/CI engineering commands,
-capability/adapter import rules, PostgreSQL/Drizzle, dfx development lifecycle,
-Vercel AI SDK integration, validated coverage/CRAP, test linting and advisory mutations.
-It implements no moderation policy/workflow/schema or AI evaluation runner.
+The scaffold includes the workspace, enforced engineering commands, capability/import
+rules, PostgreSQL/Drizzle, dfx development lifecycle, Vercel AI SDK integration,
+validated coverage/CRAP, test linting and advisory mutations. No moderation workflow,
+application schema or AI evaluation runner is implemented.
 
-## Reproduce
+## Reproduce current checks
 
 With pinned Node 24.22.2 / pnpm 12.16.1 and
 [disposable PostgreSQL](postgres-validation.md):
@@ -16,53 +16,46 @@ pnpm mutation:verify
 TURBO_FORCE=true pnpm check
 ```
 
-Mutation verification precedes coverage so its generated artifacts do not invalidate
-fresh evidence. `pnpm check` enforces Biome, test lint/fixtures, import graphs,
-TypeScript, actual application tests, CRAP/evidence fixtures and fresh baseline/source
-coverage. Source eligibility is shared across these tools; no threshold is relaxed.
+Mutation verification precedes coverage so generated artifacts do not invalidate
+fresh evidence. See [toolchain maintenance](toolchain-maintenance.md) for upgrade
+fixtures, guarantees, failure diagnosis and limits.
 
-The independently reproduced pre-improvement baseline was 45 application tests,
-98.18% statements, 100% branches, and 45 functions with maximum CRAP 5.2. The
-improvement pass adds the exact Effect.sync regression, shared-source eligibility
-and complete sharding/report checks. Its final execution evidence is recorded below.
+## Latest survivor-driven pass
 
-Hosted **CI / Checks** passed on earlier PR revisions. New pushed revisions must pass
-that same check; workflow success alone does not establish merge protection. The
-existing main ruleset remains disabled: see the exact
-[remaining administrator action](repository-protection.md).
+- Strict frozen installation and the full uncached gate passed: **52 application
+  tests**, **20 lint fixtures**, **12 architecture graphs**, **15 CRAP/evidence/policy
+  tests**, **98.18% statements / 100% branches**, and **45 production functions with
+  maximum CRAP 5.2**. All five real mutation-verification tests passed separately.
+- New tests reject one wrong READY guild, prefix/suffix numeric IDs and whitespace
+  API credentials before transport use. Controlled timer observation proves actual
+  acquisition and disposal on interruption, not just stop logging.
+- Six specific original hosted replacements were applied directly, the focused
+  tests failed, the original source was restored and the tests passed. No production
+  source changes/mutants are committed.
+- A real Stryker compiled-entrypoint probe reproduced the survivor before forwarding
+  the child's mutation activation and killed it afterward. Only the activation
+  variable is forwarded; development credentials remain excluded.
+- [Survivor triage](mutation-survivor-triage.md) accounts for all 21 original survivors
+  and both classified timeouts, distinguishing fixed gaps, remaining behavioral gaps
+  and bounded/nonobservable cases. It does not target a perfect score.
+- Logs/probes are under `/home/rafaeltab/.cache/hero-pr24-survivor-tests`. Independent
+  post-validation observation found **zero database client sessions**; the owned
+  container was stopped and temporary connection configuration removed.
+
+The hosted baseline `7ba448f` completed all 150 mutants across 13 original ranges:
+127 killed, 21 survived, 2 per-mutant timeouts. It is the triage input, not a claim
+about a later revision. New hosted results are recorded on the PR; mutation
+artifacts and the Results summary distinguish completed outcomes from unfinished work.
+Earlier detailed runs remain in commit/PR history rather than duplicate current guidance.
+
+## Protection and external limits
+
+The existing main ruleset is **active**, requiring **Checks only**; this was verified
+through the API after the owner enabled it. Mutation jobs remain optional by the
+user's choice. [Protection status](repository-protection.md) is independent of
+successful workflow steps; no rule changes were made in this pass.
 
 No live Discord handshake, paid AI call, production deployment or real-server bot
-installation is claimed. Controlled tests use the actual installed SDKs, not whole-SDK
-mocks. PostgreSQL tests use a real disposable server and independently observe cleanup.
-The developer retains real-server release judgment.
-
-Earlier detailed coordination and intermediate logs remain available in PR commit
-history; current commands, policies and verification records in these documents are
-authoritative rather than the superseded per-branch handoff narratives.
-
-## Review improvement pass
-
-- Strict frozen installation, lint, architecture and TypeScript checks passed.
-- The exact unawaited Effect.sync assertion went red before its fix; approved
-  promise-aware wrappers and import alias/shadow cases remain valid.
-- Real mutation verification passed all five tests, including sharding identity
-  equivalence and rejection of incomplete aggregate reports.
-- Whole-PR analysis against `1b5ea5d` completed all **150 mutants across 13 original
-  ranges** in four full-suite shards: **123 killed, 22 survived, 5 timeout**.
-  The longest local shard took **308.5 seconds**. All four completion receipts and
-  the exact original-scope union were verified. A per-mutant Timeout is a completed
-  classified result, distinct from an unfinished job-level timeout. Survivors and
-  timeout classifications remain advisory feedback, not proof of application defects.
-- Evidence/logs for this pass are stored locally under
-  `/home/rafaeltab/.cache/hero-pr24-improvements`; CI publishes per-shard reports and
-  the completeness summary as artifacts.
-- The existing ruleset update was attempted and rejected with HTTP 404; it remains
-  disabled. The exact remaining administrator step is documented separately.
-
-Final uncached `pnpm check` passed: **45 application tests**, **20 lint fixture tests**,
-**12 architecture graphs**, **15 CRAP/evidence/policy tests**, **98.18% statements /
-100% branches**, and **45 production functions with maximum CRAP 5.2**. All five
-real mutation-verification tests passed separately. Independent post-validation
-observation found **zero database client sessions**; the owned container was stopped
-and its temporary connection configuration removed. No live Discord/paid AI call
-or main-branch merge was performed.
+installation is claimed. SDK tests use installed transport paths, not whole-SDK mocks;
+PostgreSQL tests use a real disposable server. The developer retains real-server
+release judgment. No main-branch merge was performed.
