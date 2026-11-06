@@ -117,3 +117,15 @@ quality gates when merging these additions. Tests use `it.effect`,
 must preserve those forms. The CRAP source-attribution run also executes these
 integration tests and needs the test URL. #18 stays open until integration PR #24
 merges. No merge into integration or separate PR is part of this slice.
+
+Final reconciliation merged both local and remote integration tips at
+`b230b701f1e086187f3aee5385074a4ad0dfd259` into this branch, preserving the sibling
+#21 and #22 gates. The only conflict was the pnpm lockfile; it was regenerated
+from the combined exact manifests, followed by a successful frozen install.
+`HERO_TEST_DATABASE_URL=... pnpm check` then passed Biome, test-only ESLint and its
+13 fixtures, all 12 architecture graphs, TypeScript/build, 20 application tests
+(including all 11 PostgreSQL checks), 14 CRAP-gate tests, baseline fresh coverage
+and the separate source-attribution integration run. Coverage: **98.57% statements,
+100% branches**; PostgreSQL adapter: **100% statements and branches**. All **21**
+scored production functions passed CRAP <=30 (maximum observed **2**). No gating
+configuration was weakened. Disposable container cleanup followed validation.
