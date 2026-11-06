@@ -121,3 +121,11 @@ Fresh baseline coverage is **109/110 statements (99.09%) and 10/10 branches (100
 The integrated `pnpm mutation:verify` also passed all three selection/execution
 fixtures; no mutation score for the new AI adapter is claimed. Final check logs are
 `/tmp/hero-20-validation/check.log` and `/tmp/hero-20-validation/mutation.log`.
+
+The final reconciled full check passed again with zero Turbo cache hits. Both
+integration refs remained contained at the final fetch. A teardown observer counted
+one other test-role PostgreSQL session (its identity was not captured); no
+zero-session database cleanup claim is made. All existing scoped PostgreSQL cleanup
+tests passed. Stopping and removing this slice's own disposable container ended
+its sessions, and its temporary credential file was deleted. No other container
+was touched. The working tree is clean after the documentation commit.
