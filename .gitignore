@@ -5,3 +5,6 @@ coverage/
 .env
 .env.*
 !.env.example
+reports/
+.stryker-tmp/
+.mutation-fixtures/

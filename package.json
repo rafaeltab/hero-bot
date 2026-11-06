@@ -17,10 +17,14 @@
     "coverage": "turbo run coverage --force && node scripts/check-coverage.mjs",
     "check": "pnpm lint && pnpm architecture && pnpm typecheck && pnpm test && pnpm coverage",
     "architecture": "depcruise --config .dependency-cruiser.cjs --output-type err apps/discord-bot/src && node scripts/check-architecture-fixtures.mjs",
-    "lint:tests": "eslint \"apps/*/test/**/*.ts\" --max-warnings 0 && node --test scripts/test-lint/check.test.mjs"
+    "lint:tests": "eslint \"apps/*/test/**/*.ts\" --max-warnings 0 && node --test scripts/test-lint/check.test.mjs",
+    "mutation": "node scripts/mutation/run.mjs",
+    "mutation:verify": "node --test scripts/mutation/*.test.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@vitest/eslint-plugin": "1.6.28",
     "dependency-cruiser": "18.7.2",
     "eslint": "10.14.0",
