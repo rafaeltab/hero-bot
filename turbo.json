@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "env": ["HERO_ENV"]
+    },
+    "typecheck": {},
+    "test": {
+      "dependsOn": ["build"]
+    },
+    "coverage": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": ["coverage/**"]
+    }
+  }
+}

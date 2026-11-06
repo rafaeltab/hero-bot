@@ -1,0 +1,25 @@
+{
+  "name": "hero-bot",
+  "private": true,
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": "24.22.2",
+    "pnpm": "12.16.1"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "start": "pnpm --filter @hero-bot/discord-bot start",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "coverage": "turbo run coverage --force && node scripts/check-coverage.mjs",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm coverage"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.5",
+    "turbo": "2.11.10",
+    "typescript": "6.0.3"
+  }
+}
