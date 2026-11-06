@@ -7,7 +7,7 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "env": ["HERO_ENV"]
+      "env": ["HERO_ENV", "HERO_AI_API_KEY", "HERO_AI_MODEL"]
     },
     "typecheck": {},
     "test": {
