@@ -187,3 +187,35 @@ three mutation scripts and this document; no application production changes.
 Parent integration uses a fresh merger. Tracker closure remains with the final
 merge of [PR #24](https://github.com/rafaeltab/hero-bot/pull/24); this branch opens
 no PR, closes no issue and does not merge into the integration branch.
+
+## Final integrated validation
+
+Merged local integration `b230b701f1e086187f3aee5385074a4ad0dfd259` into this branch
+at `4f60e6c`, then merged the freshly fetched remote ref (already contained at the
+same SHA). The only manual conflict was `.gitignore`; all mutation and CRAP output
+entries were retained. Package scripts merged with the sibling's `test:crap`, fresh
+coverage receipts and CRAP checks intact; no sibling dependency was removed.
+
+Frozen installation with strict peers passed. `pnpm mutation:verify` passed all
+three CLI/execution tests, including separate fresh selection, 2/2 reuse, test-edit
+invalidation, static fallback, two subprocess-only mutants, and a 0.00-score
+successful advisory run. `pnpm mutation --base b230b70...` returned the expected
+empty production scope on this tooling-only branch. Full SHA was supplied; the
+ellipsis here is descriptive only. Logs are `/tmp/hero23-integrated-fixtures.log`
+and `/tmp/hero23-integrated-empty.log`; fixture reports are in
+`reports/mutation-fixtures/`.
+
+`TURBO_FORCE=true pnpm check` passed on the combined branch with zero Turbo cache
+hits: Biome, application-test ESLint, 13 lint fixture tests, 12 architecture graphs,
+TypeScript, build, nine application tests, 14 CRAP/evidence tests, fresh baseline
+coverage and independent source function attribution. Coverage is 30/31 statements
+(96.77%) and 100% branches (zero instrumented branches, hence vacuous). All eight
+production functions have CRAP <=2. Log: `/tmp/hero23-integrated-check.log`.
+
+Run mutation verification and baseline coverage **sequentially in a shared local
+checkout**. An initial concurrent run correctly failed the new coverage receipt
+check because transient fixture inputs changed during collection. The subsequent
+sequential baseline run passed without weakening that check. CI jobs have separate
+checkouts. Running mutation analysis after coverage can also make its receipt
+stale by changing reports; regenerate coverage before using the CRAP command.
+No hosted Actions run, live external service or branch-protection change is claimed.
