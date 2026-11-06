@@ -111,3 +111,13 @@ success and failure tests observe request release before the consumer exits.
 Controlled fake credentials are the only AI configuration used. Local PostgreSQL
 was provisioned in an exclusively owned disposable container on a dynamic loopback
 port, with credentials held outside the repository and omitted from command output.
+
+Final reconciliation brought local integration `bfcc68f27dbd533308d4d7c94e218e486c032d9b`
+into this branch, preserving #23's advisory mutation workflow, scripts and exact
+Stryker dependencies. The fetched remote integration tip was already contained.
+The lockfile conflict was resolved from the combined manifests with pinned pnpm,
+then strict frozen installation succeeded; no conflict markers were retained.
+Fresh baseline coverage is **109/110 statements (99.09%) and 10/10 branches (100%)**.
+The integrated `pnpm mutation:verify` also passed all three selection/execution
+fixtures; no mutation score for the new AI adapter is claimed. Final check logs are
+`/tmp/hero-20-validation/check.log` and `/tmp/hero-20-validation/mutation.log`.
