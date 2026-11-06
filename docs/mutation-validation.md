@@ -250,3 +250,53 @@ its identity was not captured, so no zero-session cleanup claim is made for that
 probe. The scoped adapter cleanup tests passed. This slice's disposable container
 was then stopped and removed, ending its sessions. This supersedes the earlier nine-test baseline totals.
 The final scope contains tooling/docs only relative to the latest integration tip.
+
+### Fresh integration merger verification
+
+The fresh merger confirmed a clean `t3/scaffold-foundation-integration` checkout
+at `5678c18cb45622aeecc21c308d8d5aa6c1c364bb` and fast-forwarded it to the child
+tip `bfcc68f27dbd533308d4d7c94e218e486c032d9b`. No conflict resolution or gate
+changes were needed. The combined dependency pins, baseline PostgreSQL service,
+architecture rules, test lint rules, coverage thresholds and CRAP checks remain.
+
+Using the pinned Node/pnpm tools and a separate `postgres:17.6-alpine` container,
+strict frozen installation passed. Sequential validation passed all three mutation
+fixtures, then killed exactly one real application string mutant using the complete
+`pnpm build && pnpm test` fallback. That mutant's report shows all 20 application
+tests ran, including the PostgreSQL tests; four expected runtime/process assertions
+failed and the other 16 tests passed. The temporary whitespace change was restored.
+The production scope against the exact integration base `5678c18...` was then empty.
+Full SHAs were supplied to the commands; this abbreviation is descriptive only.
+
+`HERO_TEST_DATABASE_URL=... TURBO_FORCE=true pnpm check` passed with zero Turbo cache
+hits: 13 test-lint fixtures, 12 architecture graphs, TypeScript/build, 20 application
+tests including all 11 PostgreSQL tests, 14 CRAP/evidence fixtures, fresh baseline
+coverage and independent source attribution. Statements were **98.57%**, branches
+**100%**, and all **21** production functions had CRAP <=2. No mutation command was
+added to the blocking gate. The fixtures again demonstrated a successful 0.00-score
+command; `thresholds.break=0` and the separate job's `continue-on-error:true` retain
+advisory scoring. Hosted Actions and branch-protection settings were not exercised.
+
+The earlier one-row teardown observation was investigated before removing this
+merger's database. A role-only observer query reproduced one row **before any test
+or mutation ran**: PID 66, backend start `2026-11-06 00:53:47.593751+00`,
+`backend_type='logical replication launcher'`, with no database, client address,
+state or query. The same PID remained after mutation and baseline validation.
+It is a PostgreSQL background process, not a pooled test connection. The earlier
+child's unidentified row cannot be classified retroactively, but the repeated count
+alone does not demonstrate a leak.
+
+Independent samples during mutation (84 snapshots) and the full check (146
+snapshots) captured transient test connections. Immediately after each CLI exited,
+and at subsequent checks over roughly five seconds, only the pre-existing launcher
+remained: **zero client backends in the test database**, excluding each observer.
+These observations include Stryker command/worker teardown; they do not infer
+cleanup from a snapshot while a worker is still running. The adapter's scoped
+success, failure and interruption cleanup tests also passed. No resource code fix
+was indicated. The observer guidance in `postgres-validation.md` now distinguishes
+database client backends from this background process.
+
+Merger logs are `/tmp/hero23-merger-{fixtures,mutation,empty,check}.log`; detailed
+session evidence is `/tmp/hero23-merger-{mutation,check}-sessions.json`. The probe
+report and exact plan are preserved locally under `reports/mutation-merger/`.
+Only this merger's disposable container was stopped and removed after the checks.

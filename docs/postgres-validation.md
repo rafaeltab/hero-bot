@@ -64,6 +64,25 @@ Use a disposable database the test user owns, with access to its own sessions in
 `pg_stat_activity` and permission to terminate them (the supplied local/CI role
 owns those sessions). No application schema is created or changed.
 
+When checking for leaked client connections, filter by database and backend type,
+and exclude the observer itself:
+
+```sql
+select pid, application_name, state, backend_start, state_change, query
+from pg_stat_activity
+where usename = current_user
+  and datname = current_database()
+  and backend_type = 'client backend'
+  and pid <> pg_backend_pid();
+```
+
+A role-only count can also include PostgreSQL's logical replication launcher.
+The disposable image starts that background process under `POSTGRES_USER`; it has
+no database or client connection and exists before tests run. Capture backend type,
+database, PID and timestamps before and after validation to distinguish it from a
+test connection. Check after the test/mutation command and its workers have exited;
+an in-flight worker may still legitimately own a connection.
+
 ```sh
 docker run --detach --rm --name hero-18-postgres \
   -e POSTGRES_USER=hero_test -e POSTGRES_PASSWORD=hero_test \
