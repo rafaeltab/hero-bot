@@ -219,3 +219,32 @@ sequential baseline run passed without weakening that check. CI jobs have separa
 checkouts. Running mutation analysis after coverage can also make its receipt
 stale by changing reports; regenerate coverage before using the CRAP command.
 No hosted Actions run, live external service or branch-protection change is claimed.
+
+### Latest PostgreSQL integration reconciliation
+
+The final ref check found newer local integration
+`5678c18cb45622aeecc21c308d8d5aa6c1c364bb` (#18). Merged it at `f57473a`,
+regenerated the conflicted lockfile from the combined manifests with pinned pnpm,
+and verified strict frozen installation. The fetched remote ref was merged too;
+the final fetch now resolves both local and remote to `5678c18`. Added the same
+disposable PostgreSQL service and test URL as baseline CI to the separate advisory
+job, so full-suite mutation analysis retains the newly required integration tests.
+No test skip, SDK substitution, or baseline weakening was introduced.
+
+With a dedicated `postgres:17.6-alpine` container on a dynamically assigned loopback
+port, mutation fixtures passed again (all three tests). The real application
+one-line probe again generated exactly one mutant and killed it using the complete
+build/test fallback, including database integration. Restored the production file;
+the report is `reports/mutation-application-probe/postgres-report.json`, log
+`/tmp/hero23-postgres-mutation.log`. The subsequent clean changed-production scope
+against `5678c18` was empty (`/tmp/hero23-postgres-empty.log`).
+
+The final sequential `HERO_TEST_DATABASE_URL=... TURBO_FORCE=true pnpm check`
+passed with zero Turbo cache hits: lint plus 13 fixtures, architecture plus 12
+graphs, TypeScript/build, **20 application tests** (11 real PostgreSQL tests),
+14 CRAP/evidence fixtures, fresh baseline coverage **98.57% statements / 100%
+branches**, and **21 production functions with CRAP <=2**. Logs are
+`/tmp/hero23-postgres-check.log` and `/tmp/hero23-postgres-fixtures.log`.
+The database observer found zero remaining test-role sessions; only this slice's
+container was stopped. This supersedes the earlier nine-test baseline totals.
+The final scope contains tooling/docs only relative to the latest integration tip.
