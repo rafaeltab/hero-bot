@@ -30,6 +30,7 @@ const scenario = (
   ) => Effect.Effect<void, unknown>,
   options: {
     context?: typeof EvidenceContext.Service;
+    judge?: (input: string) => string;
     raw?: string;
     actorRoles?: string[];
     fault?: string;
@@ -142,6 +143,7 @@ const scenario = (
               : Effect.sync(() => {
                   inputs.push(p);
                   return (
+                    options.judge?.(p) ??
                     options.raw ??
                     JSON.stringify({
                       action: "ban",
@@ -346,7 +348,12 @@ it.effect(
     scenario(
       (i, records, reports, inputs) =>
         Effect.gen(function* () {
-          expect(yield* i.receive(evidence)).toBe("reported");
+          expect(
+            yield* i.receive({
+              ...evidence,
+              text: "Yes, DM me for the whole set.",
+            }),
+          ).toBe("reported");
           const supplied = JSON.parse(inputs[0] ?? "null");
           expect(supplied.replyAncestors).toMatchObject([
             {
@@ -358,9 +365,20 @@ it.effect(
           ]);
           expect(supplied.authorId).toBe("12");
           expect(records[0]?.evidence).toEqual(supplied);
+          expect(records[0]?.judgment.action).toBe("review-hold");
           expect(reports).toEqual(records);
         }),
       {
+        judge: (input) =>
+          JSON.stringify({
+            action:
+              JSON.parse(input).replyAncestors?.[0]?.text ===
+              "Is this an unauthorized copy?"
+                ? "review-hold"
+                : "none",
+            reason: "Possible contextual distribution; intent uncertain.",
+            offendingUrls: [],
+          }),
         context: {
           acquire: (e) =>
             Effect.succeed({
@@ -374,6 +392,46 @@ it.effect(
                   text: "Is this an unauthorized copy?",
                   timestamp: "today",
                   roles: null,
+                  embeds: [],
+                  replyReference: null,
+                },
+              ],
+            }),
+        },
+      },
+    ),
+);
+
+it.effect(
+  "ordinary none discards acquired context as well as the triggering content",
+  () =>
+    scenario(
+      (i, records, reports, inputs) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive({ ...evidence, text: "Thank you" })).toBe(
+            "none",
+          );
+          expect(JSON.parse(inputs[0] ?? "null").nearbyMessages).toHaveLength(
+            1,
+          );
+          expect(records).toEqual([]);
+          expect(reports).toEqual([]);
+        }),
+      {
+        raw: '{"action":"none","reason":"Ordinary discussion.","offendingUrls":[]}',
+        context: {
+          acquire: (e) =>
+            Effect.succeed({
+              ...e,
+              nearbyMessages: [
+                {
+                  guildId: "10",
+                  channelId: "20",
+                  messageId: "90",
+                  authorId: "context-author",
+                  text: "ordinary conversation",
+                  timestamp: "today",
+                  roles: [],
                   embeds: [],
                   replyReference: null,
                 },

@@ -131,7 +131,7 @@ export const ModerationLive = Layer.effect(
             ].includes(request.command.channelId);
             return [
               `Channel ${request.command.channelId}: ${channel ? "available" : "missing or cross-server"}; configured ${config.version > 0}; configured exempt route ${exempt}.`,
-              "Creation monitoring and private text evidence reporting: available when configured. Edits, conversation/history/attachment contents, AI budgets and confidential intake: unavailable until later slices.",
+              "Creation/edit input decoding, bounded conversation/recorded history and private attachment preservation: available when configured. Complete edit progression/root reuse requires #31. AI attachment contents, current restriction/action-history ingestion, AI budgets and confidential intake: unavailable until later slices.",
               disabled,
               ...problems(config, access),
             ].join("\n");

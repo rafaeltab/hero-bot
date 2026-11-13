@@ -71,6 +71,7 @@ const socket = new Gateway();
 globalThis.fetch = async (_url, init) => {
   const body = JSON.parse(String(init.body));
   aiCalls++;
+  setTimeout(completeIfReady, 0);
   const input = JSON.parse(
     body.messages.find((m) => m.role === "user").content,
   );
@@ -95,6 +96,27 @@ globalThis.fetch = async (_url, init) => {
     ],
     usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
   });
+};
+let completed = false;
+const completeIfReady = () => {
+  if (completed || aiCalls !== 3) return;
+  const text = calls
+    .filter(
+      (r) => r.method === "POST" && r.url.endsWith("/channels/thread/messages"),
+    )
+    .map((r) => r.body.content)
+    .join("");
+  try {
+    JSON.parse(text);
+  } catch {
+    return;
+  }
+  completed = true;
+  writeFileSync(
+    process.env.HERO_TEST_REPORT_PATH,
+    JSON.stringify({ calls, aiCalls }),
+  );
+  console.log("intake scenario complete");
 };
 let emitted = false;
 const transport = Layer.mergeAll(
@@ -144,13 +166,6 @@ const transport = Layer.mergeAll(
             source("102", "11", "exempt secret"),
           );
         }, 20);
-        setTimeout(() => {
-          writeFileSync(
-            process.env.HERO_TEST_REPORT_PATH,
-            JSON.stringify({ calls, aiCalls }),
-          );
-          console.log("intake scenario complete");
-        }, 600);
       }
       if (request.url.endsWith(`/guilds/${guild}`)) result = { owner_id: "11" };
       if (request.url.includes("/members/"))
@@ -183,6 +198,7 @@ const transport = Layer.mergeAll(
       if (request.url.endsWith("/messages"))
         result = request.method === "GET" ? [] : { id: "root" };
       if (request.url.endsWith("/threads")) result = { id: "thread" };
+      setTimeout(completeIfReady, 0);
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,

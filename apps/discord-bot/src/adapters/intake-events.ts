@@ -1,7 +1,10 @@
 import { DiscordREST } from "dfx";
 import { DiscordGateway } from "dfx/gateway";
 import { Console, Effect, Stream } from "effect";
-import { Intake } from "../capabilities/moderation/contract.ts";
+import {
+  Intake,
+  ModerationUnavailable,
+} from "../capabilities/moderation/contract.ts";
 /** Structural gateway boundary also accepts controlled fixtures; no SDK types escape. */
 export type MessageCreation = {
   guild_id?: string | undefined;
@@ -23,6 +26,10 @@ export const handleMessageCreation = (
 ) =>
   Effect.gen(function* () {
     if (!event.guild_id || !guildIds.includes(event.guild_id)) return;
+    if (typeof event.content !== "string")
+      return yield* Effect.fail(
+        new ModerationUnavailable({ reason: "discord" }),
+      );
     const rest = yield* DiscordREST;
     const channel = yield* rest.getChannel(event.channel_id);
     if (
@@ -32,6 +39,19 @@ export const handleMessageCreation = (
       return;
     const parentId =
       "parent_id" in channel ? (channel.parent_id ?? null) : null;
+    const foreignQuote = [
+      event.message_reference,
+      event.referenced_message,
+    ].some((value) => {
+      const r = value as
+        | { guild_id?: string; channel_id?: string }
+        | null
+        | undefined;
+      return (
+        (r?.guild_id !== undefined && r.guild_id !== event.guild_id) ||
+        (r?.channel_id !== undefined && r.channel_id !== event.channel_id)
+      );
+    });
     const intake = yield* Intake;
     yield* intake.receive({
       guildId: event.guild_id,
@@ -47,11 +67,17 @@ export const handleMessageCreation = (
       replyReference: event.message_reference ?? null,
       text: event.content,
       embeds: [...(event.embeds ?? [])],
-      quotes: event.referenced_message ? [event.referenced_message] : [],
+      quotes:
+        event.referenced_message && !foreignQuote
+          ? [event.referenced_message]
+          : [],
       attachments: [...(event.attachments ?? [])],
       roles: [...(event.member?.roles ?? [])],
       restriction: "unavailable (no restriction-history inspection)",
       limitations: [
+        ...(foreignQuote
+          ? ["Quoted content omitted: foreign-server/channel reference."]
+          : []),
         "Attachment AI contents: unavailable; metadata only. Actionable originals are copied separately with explicit preservation status.",
         "English audit translation: unavailable; original evidence retained.",
       ],

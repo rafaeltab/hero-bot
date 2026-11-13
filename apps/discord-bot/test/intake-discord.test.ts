@@ -351,3 +351,52 @@ it.effect(
     );
   },
 );
+
+it.effect(
+  "foreign-server quote text is omitted while its reference remains an explicit limitation",
+  () => {
+    const supplied: import("../src/capabilities/moderation/contract.ts").Evidence[] =
+      [];
+    return Effect.gen(function* () {
+      yield* handleMessageCreation(
+        {
+          guild_id: "10",
+          id: "100",
+          channel_id: "20",
+          timestamp: "today",
+          content: "source",
+          author: { id: "12" },
+          message_reference: {
+            guild_id: "other",
+            channel_id: "foreign",
+            message_id: "99",
+          },
+          referenced_message: {
+            author: { id: "foreign-author" },
+            content: "must not enter this server evidence",
+          },
+        },
+        ["10"],
+      );
+      expect(supplied[0]?.quotes).toEqual([]);
+      expect(supplied[0]?.limitations.join(" ")).toContain(
+        "Quoted content omitted",
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.succeed(DiscordREST, {
+          getChannel: () => Effect.succeed({ type: 0, guild_id: "10" }),
+        } as never),
+      ),
+      Effect.provide(
+        Layer.succeed(Intake, {
+          receive: (e) =>
+            Effect.sync(() => {
+              supplied.push(e);
+              return "none" as const;
+            }),
+        }),
+      ),
+    );
+  },
+);

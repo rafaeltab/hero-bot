@@ -59,7 +59,7 @@ it("executable moderation path judges actionable/harmless creations, exempts own
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(Error("offline intake timed out")),
+        () => reject(Error(`offline intake timed out: ${output}`)),
         5000,
       );
       child.stdout.setEncoding("utf8").on("data", (chunk) => {
@@ -110,19 +110,24 @@ it("executable moderation path judges actionable/harmless creations, exempts own
     await Effect.runPromise(
       Effect.gen(function* () {
         const s = yield* IntakeStore;
-        expect(yield* s.read(guildId, "100")).toMatchObject([
-          {
-            record: {
-              evidence: {
-                text: "https://bilibili.com/video/1",
-                authorId: "12",
-              },
-              configuration: { guildId },
-              model: "gpt-6-luna",
-            },
-            delivery: { rootId: "root", threadId: "thread" },
-          },
-        ]);
+        yield* Effect.promise(
+          async () =>
+            await expect
+              .poll(() => Effect.runPromise(s.read(guildId, "100")))
+              .toMatchObject([
+                {
+                  record: {
+                    evidence: {
+                      text: "https://bilibili.com/video/1",
+                      authorId: "12",
+                    },
+                    configuration: { guildId },
+                    model: "gpt-6-luna",
+                  },
+                  delivery: { rootId: "root", threadId: "thread" },
+                },
+              ]),
+        );
         expect(yield* s.read(guildId, "101")).toEqual([]);
         expect(yield* s.read(guildId, "102")).toEqual([]);
       }).pipe(Effect.provide(intakePostgresLayer()), Effect.provide(config)),
