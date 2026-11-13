@@ -1,20 +1,17 @@
-import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { parseEnv } from "node:util";
+import { config } from "dotenv";
 import { defineConfig } from "vitest/config";
 
 const { coverageExcludes } = createRequire(import.meta.url)(
   "./tooling/production-policy.cjs",
 );
 
-const environmentFile = new URL(".env", import.meta.url);
-if (!process.env.CI && existsSync(environmentFile)) {
-  const { HERO_TEST_DATABASE_URL } = parseEnv(
-    readFileSync(environmentFile, "utf8"),
-  );
-  if (HERO_TEST_DATABASE_URL !== undefined)
-    process.env.HERO_TEST_DATABASE_URL = HERO_TEST_DATABASE_URL;
-}
+if (!process.env.CI)
+  config({
+    path: new URL(".env", import.meta.url),
+    override: true,
+    quiet: true,
+  });
 
 export default defineConfig({
   test: {
