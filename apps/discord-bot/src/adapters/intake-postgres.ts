@@ -86,7 +86,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
         correctHistory: (entry) =>
           query(async () => {
             const result = await db.execute(
-              sql`update ${t} set history_correction=${JSON.stringify(entry)}::jsonb where guild_id=${entry.guildId} and message_id=${entry.messageId} and record->'evidence'->>'authorId'=${entry.authorId} and not exists (select 1 from ${t} prior where prior.guild_id=${entry.guildId} and prior.message_id=${entry.messageId} and prior.history_correction->>'at' >= ${entry.at}) returning message_id`,
+              sql`update ${t} set history_correction=${JSON.stringify(entry)}::jsonb where guild_id=${entry.guildId} and message_id=${entry.messageId} and record->'evidence'->>'authorId'=${entry.authorId} and not exists (select 1 from ${t} prior where prior.guild_id=${entry.guildId} and prior.message_id=${entry.messageId} and (prior.history_correction->>'at')::timestamptz >= ${entry.at}::timestamptz) returning message_id`,
             );
             if (result.rows.length === 0) throw Error();
           }),
@@ -98,7 +98,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
               record: RecordEntry;
               history_correction: HistoryEntry | null;
             }>(
-              sql`select record,history_correction from ${t} where guild_id=${guildId} and record->'evidence'->>'authorId'=${authorId} order by version desc`,
+              sql`select record,history_correction from ${t} where guild_id=${guildId} and record->'evidence'->>'authorId'=${authorId} and record->'judgment'->>'action' <> 'none' order by version::timestamptz desc`,
             );
             const entries = new Map<string, HistoryEntry>();
             const corrections = new Map<string, HistoryEntry>();
@@ -112,8 +112,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
                   messageId: id,
                   at: r.assessedAt,
                   origin: "automatic",
-                  status:
-                    r.judgment.action === "none" ? "corrected" : "pending",
+                  status: "pending",
                   summary: `${r.judgment.action}: ${r.judgment.reason}`,
                   supportingEvidence: [
                     {
@@ -135,7 +134,8 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
               if (
                 correction &&
                 (!corrections.has(id) ||
-                  (corrections.get(id)?.at ?? "") < correction.at)
+                  Date.parse(corrections.get(id)?.at ?? "1970-01-01") <
+                    Date.parse(correction.at))
               )
                 corrections.set(id, correction);
             }

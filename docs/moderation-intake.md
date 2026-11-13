@@ -79,8 +79,9 @@ Complete edit events preserve their own exact contents. #31 supplies durable
 progression and one-root edit behavior.
 
 History reads retained moderation findings for this server/member only, resolves
-latest source versions and current corrections before selecting ten entries, and
-excludes the source being judged. It supplies pending/confirmed findings and
+latest actionable source versions and current corrections before selecting ten entries, and
+excludes the source being judged. A harmless edit does not overturn the earlier finding;
+only a recorded correction changes that finding's outcome. It supplies pending/confirmed findings and
 corrected/overturned outcomes with supporting evidence and known origin. The
 `IntakeStore.correctHistory` boundary records a newer complete outcome snapshot,
 without modifying the original evidence; it rejects stale timestamps and unmatched

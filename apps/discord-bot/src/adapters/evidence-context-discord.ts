@@ -63,22 +63,27 @@ type Message = {
       }
     | undefined;
 };
-const decode = (m: Message, guildId: string): ConversationMessage => ({
-  guildId,
-  channelId: m.channel_id,
-  messageId: m.id,
-  authorId: m.author.id,
-  timestamp: m.timestamp,
-  text: m.content,
-  roles: m.member ? [...m.member.roles] : null,
-  embeds: [...(m.embeds ?? [])],
-  replyReference: m.message_reference ?? null,
-});
-const validMessage = (m: Message, e: Evidence, channel: string) =>
-  (!m.guild_id || m.guild_id === e.guildId) &&
-  m.channel_id === channel &&
-  typeof m.content === "string" &&
-  typeof m.author?.id === "string";
+const decode = (m: Message, guildId: string): ConversationMessage => {
+  return {
+    guildId,
+    channelId: m.channel_id,
+    messageId: m.id,
+    authorId: m.author.id,
+    timestamp: m.timestamp,
+    text: m.content,
+    roles: m.member ? [...m.member.roles] : null,
+    embeds: [...(m.embeds ?? [])],
+    replyReference: m.message_reference ?? null,
+  };
+};
+const validMessage = (m: Message, e: Evidence, channel: string) => {
+  return (
+    (!m.guild_id || m.guild_id === e.guildId) &&
+    m.channel_id === channel &&
+    typeof m.content === "string" &&
+    typeof m.author?.id === "string"
+  );
+};
 
 export const evidenceContextDiscordLayer = (bounds: ContextBounds = defaults) =>
   Layer.effect(
@@ -199,7 +204,7 @@ export const evidenceContextDiscordLayer = (bounds: ContextBounds = defaults) =>
               `Moderation history truncated to ${bounds.history} current findings; corrections resolved before selection.`,
             );
           const moderationHistory = scoped
-            .sort((a, b) => b.at.localeCompare(a.at))
+            .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
             .slice(0, bounds.history);
           limitations.push(
             "History covers recorded findings only; Discord action history and current restriction are unavailable. Prior deletion alone does not prove intent. Context authors are not independent targets.",
