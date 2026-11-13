@@ -78,7 +78,7 @@ it("executable moderation path judges actionable/harmless creations, exempts own
       });
     });
     const observed = JSON.parse(await readFile(path, "utf8"));
-    expect(observed.aiCalls).toBe(2);
+    expect(observed.aiCalls).toBe(3);
     const writes = observed.calls.filter(
       (r: { method: string }) => r.method !== "GET",
     );

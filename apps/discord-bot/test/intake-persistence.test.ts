@@ -96,3 +96,61 @@ it.effect(
       }),
     ),
 );
+
+it.effect(
+  "recorded corrections survive restart and replace adverse history without altering original evidence",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const table = yield* configurationDatabase;
+        yield* Effect.gen(function* () {
+          const s = yield* IntakeStore;
+          yield* s.claim(evidence);
+          yield* s.save({
+            evidence,
+            configuration,
+            judgment: {
+              action: "delete",
+              reason: "Original finding.",
+              offendingUrls: [],
+            },
+            model: "gpt-6-luna",
+            provider: "openai/chat",
+            assessedAt: "2026-11-13T00:00:00Z",
+          });
+          yield* s.correctHistory!({
+            guildId: "10",
+            authorId: "12",
+            messageId: "100",
+            at: "2026-11-14T00:00:00Z",
+            origin: "manual",
+            status: "overturned",
+            summary: "Authorized copy",
+            correction: "Original deletion recommendation was mistaken",
+            supportingEvidence: ["License supplied by author"],
+          });
+        }).pipe(
+          Effect.provide(intakePostgresLayer(table)),
+          Effect.provide(databaseConfig),
+        );
+        yield* Effect.gen(function* () {
+          const s = yield* IntakeStore;
+          expect(yield* s.memberHistory!("10", "12")).toMatchObject([
+            {
+              status: "overturned",
+              summary: "Authorized copy",
+              supportingEvidence: ["License supplied by author"],
+            },
+          ]);
+          expect(yield* s.memberHistory!("other", "12")).toEqual([]);
+          expect(yield* s.memberHistory!("10", "other")).toEqual([]);
+          expect((yield* s.read("10", "100"))[0]?.record.judgment.reason).toBe(
+            "Original finding.",
+          );
+        }).pipe(
+          Effect.provide(intakePostgresLayer(table)),
+          Effect.provide(databaseConfig),
+        );
+      }),
+    ),
+);

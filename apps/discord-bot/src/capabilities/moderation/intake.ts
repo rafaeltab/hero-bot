@@ -4,6 +4,7 @@ import { Intake, ModerationUnavailable, type RecordEntry } from "./contract.ts";
 import { judgmentInstructions, parseJudgment } from "./judgment.ts";
 import {
   ConfigurationStore,
+  EvidenceContext,
   GuildAccess,
   IntakeStore,
   Reports,
@@ -16,6 +17,7 @@ export const IntakeLive = Layer.effect(
     const store = yield* IntakeStore;
     const reports = yield* Reports;
     const ai = yield* TextGeneration;
+    const context = yield* Effect.serviceOption(EvidenceContext);
     return Intake.of({
       receive: (e) => {
         let channel: string | null = null;
@@ -50,7 +52,11 @@ export const IntakeLive = Layer.effect(
             );
           channel = privateRoute.id;
           if (!(yield* store.claim(e))) return "duplicate" as const;
-          const supplied = { ...e, currentRoles: a.actorRoles };
+          const source = { ...e, currentRoles: a.actorRoles };
+          const supplied =
+            context._tag === "Some"
+              ? yield* context.value.acquire(source)
+              : source;
           const systemPrompt = `${judgmentInstructions}\n${config.prompt}`;
           const raw = yield* ai.generate(
             JSON.stringify(supplied),

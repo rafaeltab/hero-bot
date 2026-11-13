@@ -46,8 +46,30 @@ export type Judgment = {
   reason: string;
   offendingUrls: string[];
 };
-/** Complete original gateway evidence; embeds and attributed quotes remain unmodified.
- * No linked destinations or attachment contents are retrieved by this slice. */
+/** Exact source and supplied context. Discord evidence is application acquired;
+ * linked destinations are never retrieved. Missing evidence has explicit limitations. */
+export type HistoryEntry = {
+  guildId: string;
+  authorId: string;
+  messageId: string;
+  at: string;
+  origin: "automatic" | "manual" | "unknown";
+  status: "pending" | "upheld" | "corrected" | "overturned";
+  summary: string;
+  correction?: string;
+  supportingEvidence: unknown[];
+};
+export type ConversationMessage = {
+  guildId: string;
+  channelId: string;
+  messageId: string;
+  authorId: string;
+  timestamp: string;
+  text: string;
+  roles: string[] | null;
+  embeds: unknown[];
+  replyReference: unknown;
+};
 export type Evidence = {
   guildId: string;
   messageId: string;
@@ -56,6 +78,10 @@ export type Evidence = {
   channelId: string;
   parentId: string | null;
   currentRoles?: string[];
+  replyAncestors?: ConversationMessage[];
+  nearbyMessages?: ConversationMessage[];
+  moderationHistory?: HistoryEntry[];
+  historyAvailability?: "available" | "unavailable";
   channelContext?: { type: number; name: string | null };
   replyReference?: unknown;
   text: string;
@@ -77,9 +103,9 @@ export type RecordEntry = {
   systemPrompt?: string;
 };
 export type Delivery = { rootId: string; threadId: string };
-/** Creation-only notification workflow. Claims are content-free and durable: failed or
- * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
- * Later edit/context/attachment/retry capabilities are explicitly unavailable. */
+/** Notification workflow. Claims are content-free and durable: failed or interrupted
+ * claims are not replayed. Never deletes, bans, or changes member roles.
+ * Source decoding/context acquisition do not implement edit progress or root reuse. */
 export class Intake extends Context.Service<
   Intake,
   {

@@ -18,10 +18,23 @@ export const reportsDiscordLayer = Layer.effect(
               new ModerationUnavailable({ reason: "configuration" }),
             );
           const e = r.evidence;
+          const history =
+            e.moderationHistory === undefined ||
+            e.historyAvailability === "unavailable"
+              ? "unavailable (not a clean-history finding)"
+              : e.moderationHistory.length === 0
+                ? "No relevant recorded entries supplied; Discord action history unavailable."
+                : e.moderationHistory
+                    .slice(0, 3)
+                    .map(
+                      (h) =>
+                        `${h.origin} ${h.status} — ${h.authorId}, source ${h.messageId}, <t:${Math.floor(Date.parse(h.at) / 1000)}:R>: ${h.summary.slice(0, 120)}${h.correction ? `; correction: ${h.correction.slice(0, 120)}` : ""}`,
+                    )
+                    .join("\n");
           const root = yield* rest.createMessage(channel, {
             ...safe,
             content:
-              `Automatic report — ${e.authorId}\nRecommendation: ${r.judgment.action}\nReason: ${r.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${r.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: unavailable.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nSource version: ${e.version}\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
+              `Automatic report — ${e.authorId}\nRecommendation: ${r.judgment.action}\nReason: ${r.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${r.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: ${history}\nContext: ${(e.replyAncestors ?? []).length} ancestors; ${(e.nearbyMessages ?? []).length} nearby. Full attributed evidence and omissions in thread.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nSource version: ${e.version}\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
                 0,
                 1900,
               ),

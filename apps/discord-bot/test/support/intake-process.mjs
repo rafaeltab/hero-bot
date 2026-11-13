@@ -75,10 +75,11 @@ globalThis.fetch = async (_url, init) => {
     body.messages.find((m) => m.role === "user").content,
   );
   const judgment = {
-    action: input.text === "hello" ? "none" : "ban",
+    action: input.text.startsWith("hello") ? "none" : "ban",
     reason: "Platform presumption; piracy unverified.",
-    offendingUrls:
-      input.text === "hello" ? [] : ["https://bilibili.com/video/1"],
+    offendingUrls: input.text.startsWith("hello")
+      ? []
+      : ["https://bilibili.com/video/1"],
   };
   return Response.json({
     id: "controlled",
@@ -133,6 +134,11 @@ const transport = Layer.mergeAll(
             source("100", "12", "https://bilibili.com/video/1"),
           );
           socket.receive("MESSAGE_CREATE", source("101", "12", "hello"));
+          socket.receive("MESSAGE_UPDATE", {
+            guild_id: guild,
+            id: "101",
+            channel_id: "20",
+          });
           socket.receive(
             "MESSAGE_CREATE",
             source("102", "11", "exempt secret"),
@@ -169,7 +175,13 @@ const transport = Layer.mergeAll(
         ];
       if (request.url.endsWith("/channels/20"))
         result = { id: "20", guild_id: guild, type: 0, parent_id: null };
-      if (request.url.endsWith("/messages")) result = { id: "root" };
+      if (request.url.endsWith("/messages/101"))
+        result = {
+          ...source("101", "12", "hello edited"),
+          edited_timestamp: "2026-11-13T00:01:00Z",
+        };
+      if (request.url.endsWith("/messages"))
+        result = request.method === "GET" ? [] : { id: "root" };
       if (request.url.endsWith("/threads")) result = { id: "thread" };
       return Effect.succeed(
         HttpClientResponse.fromWeb(

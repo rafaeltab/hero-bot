@@ -8,6 +8,7 @@ import {
 import { IntakeLive } from "../src/capabilities/moderation/intake.ts";
 import {
   ConfigurationStore,
+  EvidenceContext,
   GuildAccess,
   IntakeStore,
   Reports,
@@ -28,6 +29,7 @@ const scenario = (
     notices: string[],
   ) => Effect.Effect<void, unknown>,
   options: {
+    context?: typeof EvidenceContext.Service;
     raw?: string;
     actorRoles?: string[];
     fault?: string;
@@ -50,6 +52,12 @@ const scenario = (
     yield* run(yield* Intake, records, reports, inputs, notices);
   }).pipe(
     Effect.provide(IntakeLive),
+    Effect.provide(
+      Layer.succeed(
+        EvidenceContext,
+        options.context ?? { acquire: (e) => Effect.succeed(e) },
+      ),
+    ),
     Effect.provide(
       Layer.mergeAll(
         Layer.succeed(ConfigurationStore, {
@@ -328,5 +336,49 @@ it.effect(
           expect([records, reports]).toEqual([[], []]);
         }),
       { raw: "bad", fault: "notify" },
+    ),
+);
+
+it.effect(
+  "contextual reply judges only the triggering author and retains the exact supplied conversation",
+  () =>
+    scenario(
+      (i, records, reports, inputs) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("reported");
+          const supplied = JSON.parse(inputs[0] ?? "null");
+          expect(supplied.replyAncestors).toMatchObject([
+            {
+              guildId: "10",
+              messageId: "99",
+              authorId: "someone-else",
+              text: "Is this an unauthorized copy?",
+            },
+          ]);
+          expect(supplied.authorId).toBe("12");
+          expect(records[0]?.evidence).toEqual(supplied);
+          expect(reports).toEqual(records);
+        }),
+      {
+        context: {
+          acquire: (e) =>
+            Effect.succeed({
+              ...e,
+              replyAncestors: [
+                {
+                  guildId: "10",
+                  channelId: "20",
+                  messageId: "99",
+                  authorId: "someone-else",
+                  text: "Is this an unauthorized copy?",
+                  timestamp: "today",
+                  roles: null,
+                  embeds: [],
+                  replyReference: null,
+                },
+              ],
+            }),
+        },
+      },
     ),
 );

@@ -3,6 +3,7 @@ import type {
   Configuration,
   Delivery,
   Evidence,
+  HistoryEntry,
   ModerationUnavailable,
   RecordEntry,
 } from "./contract.ts";
@@ -41,6 +42,15 @@ export class ConfigurationStore extends Context.Service<
 export class IntakeStore extends Context.Service<
   IntakeStore,
   {
+    /** Current finding snapshots, resolved before applying any bound. */
+    memberHistory?: (
+      guildId: string,
+      authorId: string,
+    ) => Effect.Effect<HistoryEntry[], ModerationUnavailable>;
+    /** Replace a finding's current outcome without altering retained original evidence. */
+    correctHistory?: (
+      entry: HistoryEntry,
+    ) => Effect.Effect<void, ModerationUnavailable>;
     claim: (
       e: Pick<Evidence, "guildId" | "messageId" | "version">,
     ) => Effect.Effect<boolean, ModerationUnavailable>;
@@ -70,3 +80,13 @@ export class Reports extends Context.Service<
     ) => Effect.Effect<void, ModerationUnavailable>;
   }
 >()("hero-bot/Reports") {}
+
+/** Application-controlled evidence acquisition; runs only after exemption and claim. */
+export class EvidenceContext extends Context.Service<
+  EvidenceContext,
+  {
+    acquire: (
+      evidence: Evidence,
+    ) => Effect.Effect<Evidence, ModerationUnavailable>;
+  }
+>()("hero-bot/EvidenceContext") {}

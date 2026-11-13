@@ -4,6 +4,7 @@ import { Config, Effect, Layer } from "effect";
 import { Pool } from "pg";
 import type {
   Delivery,
+  HistoryEntry,
   RecordEntry,
 } from "../capabilities/moderation/contract.ts";
 import { ModerationUnavailable } from "../capabilities/moderation/contract.ts";
@@ -53,7 +54,70 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
           sql`create table if not exists ${t} (guild_id text not null,message_id text not null,version text not null,record jsonb,delivery jsonb,primary key(guild_id,message_id,version))`,
         ),
       );
+      yield* query(() =>
+        db.execute(
+          sql`alter table ${t} add column if not exists history_correction jsonb`,
+        ),
+      );
       return IntakeStore.of({
+        correctHistory: (entry) =>
+          query(async () => {
+            const result = await db.execute(
+              sql`update ${t} set history_correction=${JSON.stringify(entry)}::jsonb where guild_id=${entry.guildId} and message_id=${entry.messageId} and record->'evidence'->>'authorId'=${entry.authorId} and (history_correction is null or history_correction->>'at' < ${entry.at}) returning message_id`,
+            );
+            if (result.rows.length === 0) throw Error();
+          }),
+        memberHistory: (guildId, authorId) =>
+          query(async () => {
+            // Resolve the latest retained source version and its latest correction BEFORE
+            // any bound. A corrected finding can never fall outside a raw-event window.
+            const result = await db.execute<{
+              record: RecordEntry;
+              history_correction: HistoryEntry | null;
+            }>(
+              sql`select record,history_correction from ${t} where guild_id=${guildId} and record->'evidence'->>'authorId'=${authorId} order by version desc`,
+            );
+            const entries = new Map<string, HistoryEntry>();
+            const corrections = new Map<string, HistoryEntry>();
+            for (const row of result.rows) {
+              const r = row.record;
+              const id = r.evidence.messageId;
+              if (!entries.has(id))
+                entries.set(id, {
+                  guildId,
+                  authorId,
+                  messageId: id,
+                  at: r.assessedAt,
+                  origin: "automatic",
+                  status:
+                    r.judgment.action === "none" ? "corrected" : "pending",
+                  summary: `${r.judgment.action}: ${r.judgment.reason}`,
+                  supportingEvidence: [
+                    {
+                      guildId,
+                      messageId: id,
+                      channelId: r.evidence.channelId,
+                      authorId,
+                      version: r.evidence.version,
+                      text: r.evidence.text,
+                      embeds: r.evidence.embeds,
+                      quotes: r.evidence.quotes,
+                      attachments: r.evidence.attachments,
+                    },
+                  ],
+                });
+              const correction = row.history_correction;
+              if (
+                correction &&
+                (!corrections.has(id) ||
+                  (corrections.get(id)?.at ?? "") < correction.at)
+              )
+                corrections.set(id, correction);
+            }
+            for (const [id, correction] of corrections)
+              entries.set(id, correction);
+            return [...entries.values()];
+          }),
         claim: (e) =>
           query(async () => {
             const r = await db.execute(

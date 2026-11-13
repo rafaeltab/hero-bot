@@ -8,6 +8,7 @@ export type MessageCreation = {
   id: string;
   channel_id: string;
   timestamp: string;
+  edited_timestamp?: string | null | undefined;
   content: string;
   author: { id: string };
   member?: { roles: readonly string[] };
@@ -24,13 +25,18 @@ export const handleMessageCreation = (
     if (!event.guild_id || !guildIds.includes(event.guild_id)) return;
     const rest = yield* DiscordREST;
     const channel = yield* rest.getChannel(event.channel_id);
+    if (
+      ("guild_id" in channel && channel.guild_id !== event.guild_id) ||
+      ![0, 2, 5, 10, 11, 12].includes(channel.type)
+    )
+      return;
     const parentId =
       "parent_id" in channel ? (channel.parent_id ?? null) : null;
     const intake = yield* Intake;
     yield* intake.receive({
       guildId: event.guild_id,
       messageId: event.id,
-      version: event.timestamp,
+      version: event.edited_timestamp ?? event.timestamp,
       authorId: event.author.id,
       channelId: event.channel_id,
       parentId,
@@ -46,24 +52,45 @@ export const handleMessageCreation = (
       roles: [...(event.member?.roles ?? [])],
       restriction: "unavailable (no restriction-history inspection)",
       limitations: [
-        "Reply ancestors and nearby conversation: unavailable.",
-        "Moderation history and corrections: unavailable.",
         "Attachment contents and copying: unavailable; metadata only.",
         "English audit translation: unavailable; original evidence retained.",
-        "Message edits: unavailable; creation-only workflow.",
-        ...(event.message_reference
-          ? ["Reply reference supplied; full reply chain unavailable."]
-          : []),
       ],
     });
+  });
+/** Partial updates are hydrated from Discord, never filled from an ordinary-content cache.
+ * The REST snapshot's version wins when it has already advanced beyond the event. */
+export const handleMessageUpdate = (
+  event: { id: string; channel_id: string; guild_id?: string | undefined },
+  guildIds: readonly string[],
+) =>
+  Effect.gen(function* () {
+    if (!event.guild_id || !guildIds.includes(event.guild_id)) return;
+    const rest = yield* DiscordREST;
+    const message = yield* rest.getMessage(event.channel_id, event.id);
+    if (message.id !== event.id || message.channel_id !== event.channel_id)
+      return;
+    yield* handleMessageCreation(
+      { ...message, guild_id: event.guild_id },
+      guildIds,
+    );
   });
 export const runMessageCreations = (guildIds: readonly string[]) =>
   Effect.gen(function* () {
     const gateway = yield* DiscordGateway;
-    return yield* gateway.fromDispatch("MESSAGE_CREATE").pipe(
+    return yield* Stream.merge(
+      gateway
+        .fromDispatch("MESSAGE_CREATE")
+        .pipe(Stream.map((e) => ({ kind: "create" as const, event: e }))),
+      gateway
+        .fromDispatch("MESSAGE_UPDATE")
+        .pipe(Stream.map((e) => ({ kind: "update" as const, event: e }))),
+    ).pipe(
       Stream.mapEffect(
         (e) =>
-          handleMessageCreation(e, guildIds).pipe(
+          (e.kind === "create"
+            ? handleMessageCreation(e.event, guildIds)
+            : handleMessageUpdate(e.event, guildIds)
+          ).pipe(
             Effect.catch(() =>
               Console.log(
                 "moderation message intake unavailable; no judgment or punishment claimed",

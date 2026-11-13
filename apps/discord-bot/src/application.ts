@@ -3,6 +3,10 @@ import { openAITextLive } from "./adapters/ai.ts";
 import { discordDevelopmentLayer } from "./adapters/discord-development.ts";
 import { DiscordNodeTransport } from "./adapters/discord-node.ts";
 import { EnvironmentFromConfig } from "./adapters/environment-config.ts";
+import {
+  contextBounds,
+  evidenceContextDiscordLayer,
+} from "./adapters/evidence-context-discord.ts";
 import { reportsDiscordLayer } from "./adapters/intake-discord.ts";
 import { runMessageCreations } from "./adapters/intake-events.ts";
 import { intakePostgresLayer } from "./adapters/intake-postgres.ts";
@@ -70,6 +74,7 @@ export const applicationForDevelopment = (
 export const moderationProgram = Effect.scoped(
   Effect.gen(function* () {
     const settings = yield* moderationSettings;
+    const bounds = yield* contextBounds;
     const ai = yield* Layer.build(openAITextLive({ modelId: "gpt-6-luna" }));
     const intakeStorage = yield* Layer.build(intakePostgresLayer());
     const storage = yield* Layer.build(configurationPostgresLayer());
@@ -84,6 +89,14 @@ export const moderationProgram = Effect.scoped(
       Layer.succeedContext(ai),
       guildAccessLayer(botId).pipe(
         Layer.provide(Layer.succeedContext(discord)),
+      ),
+      evidenceContextDiscordLayer(bounds).pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeedContext(discord),
+            Layer.succeedContext(intakeStorage),
+          ),
+        ),
       ),
       reportsDiscordLayer.pipe(Layer.provide(Layer.succeedContext(discord))),
     );
