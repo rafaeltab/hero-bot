@@ -65,7 +65,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
           );
           // Legacy partial deliveries are uncertain; never blindly create another root.
           await tx.execute(
-            sql`update ${t} set state=case when delivery is not null and coalesce(delivery->>'state','complete')='complete' then 'delivered' else 'delivering' end where record is not null and state='legacy'`,
+            sql`update ${t} set state=case when delivery is not null and coalesce(delivery->>'state','unknown')='complete' then 'delivered' else 'delivering' end where record is not null and state='legacy'`,
           );
         }),
       );
@@ -122,7 +122,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
         delivered: (e, delivery) =>
           query(async () => {
             const result = await db.execute(
-              sql`update ${t} set state=${delivery.state === "partial" ? "delivering" : "delivered"},delivery=${JSON.stringify(delivery)}::jsonb where guild_id=${e.guildId} and message_id=${e.messageId} and version=${e.version} and record is not null and (delivery is null or (delivery->>'rootId'=${delivery.rootId} and (delivery->>'threadId'='' or delivery->>'threadId'=${delivery.threadId}))) returning message_id`,
+              sql`update ${t} set state=${delivery.state === "complete" ? "delivered" : "delivering"},delivery=${JSON.stringify(delivery)}::jsonb where guild_id=${e.guildId} and message_id=${e.messageId} and version=${e.version} and record is not null and (delivery is null or (delivery->>'rootId'=${delivery.rootId} and (delivery->>'threadId'='' or delivery->>'threadId'=${delivery.threadId}))) returning message_id`,
             );
             if (result.rows.length !== 1) throw Error();
           }),

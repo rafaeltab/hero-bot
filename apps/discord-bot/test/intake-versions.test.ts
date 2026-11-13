@@ -73,7 +73,10 @@ const fixture = () => {
             return yield* Effect.fail(
               new ModerationUnavailable({ reason: "discord" }),
             );
-          return update?.delivery ?? { rootId: "root", threadId: "thread" };
+          return {
+            ...(update?.delivery ?? { rootId: "root", threadId: "thread" }),
+            state: "complete" as const,
+          };
         }),
       notify: () => Effect.void,
     }),
@@ -162,6 +165,7 @@ it.effect(
         expect(f.reports[1]?.update?.delivery).toEqual({
           rootId: "root",
           threadId: "thread",
+          state: "complete",
         });
       }),
     ),

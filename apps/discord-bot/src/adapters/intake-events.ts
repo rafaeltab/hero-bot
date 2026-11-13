@@ -91,9 +91,8 @@ export const handleMessageUpdate = (
     const rest = yield* DiscordREST;
     const message = yield* rest.getMessage(event.channel_id, event.id);
     if (message.edited_timestamp !== event.edited_timestamp) {
-      yield* Console.log(
-        "moderation edit snapshot unavailable for exact version; no replay or finding claimed",
-      );
+      const intake = yield* Intake;
+      yield* intake.reportFailure(event.guild_id, null, "evidence", true);
       return;
     }
     yield* handleMessageCreation(
@@ -106,10 +105,22 @@ export const runMessageCreations = (guildIds: readonly string[]) =>
     const gateway = yield* DiscordGateway;
     const creations = gateway
       .fromDispatch("MESSAGE_CREATE")
-      .pipe(Stream.map((e) => handleMessageCreation(e, guildIds)));
+      .pipe(
+        Stream.map((e) =>
+          handleMessageCreation(e, guildIds).pipe(
+            Effect.catch(() => eventFailure(e.guild_id)),
+          ),
+        ),
+      );
     const edits = gateway
       .fromDispatch("MESSAGE_UPDATE")
-      .pipe(Stream.map((e) => handleMessageUpdate(e, guildIds)));
+      .pipe(
+        Stream.map((e) =>
+          handleMessageUpdate(e, guildIds).pipe(
+            Effect.catch(() => eventFailure(e.guild_id)),
+          ),
+        ),
+      );
     return yield* Stream.merge(creations, edits).pipe(
       Stream.mapEffect(
         (task) =>
@@ -124,4 +135,12 @@ export const runMessageCreations = (guildIds: readonly string[]) =>
       ),
       Stream.runDrain,
     );
+  });
+
+/** Acquisition failed before intake could judge. Never trust a source route for notices. */
+const eventFailure = (guild: string | undefined) =>
+  Effect.gen(function* () {
+    if (!guild) return;
+    const intake = yield* Intake;
+    yield* intake.reportFailure(guild, null, "evidence", true);
   });

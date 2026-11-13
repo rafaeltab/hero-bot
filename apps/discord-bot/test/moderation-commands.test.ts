@@ -5,6 +5,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { handleModerationInteraction } from "../src/adapters/moderation-commands.ts";
 import {
+  Intake,
   Moderation,
   ModerationUnavailable,
   type Request,
@@ -203,4 +204,35 @@ it.effect(
         yield* Effect.promise(() => files[0]?.text() ?? Promise.resolve("")),
       ).toBe("history".repeat(1000));
     }),
+);
+
+it.effect.each([
+  "done",
+  "Denied: current Owner/Admin or Moderator permission required.",
+])("service counts are private and follow status authorization: %s", (reply) =>
+  Effect.gen(function* () {
+    const { responses } = yield* run(event({ name: "doctor" }), reply).pipe(
+      Effect.provide(
+        Layer.succeed(Intake, {
+          receive: () => Effect.die("unused"),
+          reportFailure: () => Effect.void,
+          recover: () => Effect.void,
+          status: () =>
+            Effect.succeed({
+              since: "startup",
+              missedMessages: 7,
+              active: ["judgment"],
+              failures: { judgment: 7 },
+            }),
+        }),
+      ),
+    );
+    expect(responses.at(-1)?.body.includes("missed messages 7")).toBe(
+      reply === "done",
+    );
+    expect(JSON.parse(responses[0]?.body ?? "{}")).toMatchObject({
+      type: 5,
+      data: { flags: 64 },
+    });
+  }),
 );

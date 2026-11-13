@@ -201,17 +201,20 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
                 ...(delivery.channelId
                   ? { channelId: delivery.channelId }
                   : {}),
+                state: "complete" as const,
                 rootId: delivery.rootId,
                 threadId: thread.id,
               };
             delivery.state = complete ? "complete" : "partial";
             return delivery;
           }).pipe(
-            Effect.mapError(
-              () => new ModerationUnavailable({ reason: "discord" }),
+            Effect.mapError((error) =>
+              error instanceof ModerationUnavailable
+                ? error
+                : new ModerationUnavailable({ reason: "discord" }),
             ),
           ),
-        notify: (_guild, channel) =>
+        notify: (_guild, channel, health) =>
           Effect.gen(function* () {
             if (!channel)
               return yield* Effect.fail(
@@ -219,12 +222,13 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
               );
             yield* rest.createMessage(channel, {
               ...safe,
-              content:
-                "Moderation service failure: assessment, preservation or private delivery incomplete. No punishment attempted. No automatic replay. Check operator readiness and private records; this is not a member finding.",
+              content: `Moderation service failure: assessment, preservation or private delivery incomplete. No punishment attempted. No automatic replay. Check operator readiness and private records; this is not a member finding.${health ? `\nSince process start ${health.since}: missed messages ${health.missedMessages}; active failures: ${health.active.join(", ")}. Counts continue in private /doctor status; historical loss before start is unknown.` : ""}`,
             });
           }).pipe(
-            Effect.mapError(
-              () => new ModerationUnavailable({ reason: "discord" }),
+            Effect.mapError((error) =>
+              error instanceof ModerationUnavailable
+                ? error
+                : new ModerationUnavailable({ reason: "discord" }),
             ),
           ),
       });

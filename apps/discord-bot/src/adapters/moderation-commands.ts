@@ -2,6 +2,7 @@ import { type Discord, DiscordREST } from "dfx";
 import { Effect, Schema } from "effect";
 import {
   type Command,
+  Intake,
   Moderation,
 } from "../capabilities/moderation/contract.ts";
 
@@ -227,7 +228,7 @@ export const handleModerationInteraction = (event: unknown) =>
       payload: { type: 5, data: { flags: 64 } },
     });
     const command = parseCommand(input);
-    const content = command
+    let content = command
       ? yield* moderation
           .execute({
             guildId: input.guild_id,
@@ -242,6 +243,17 @@ export const handleModerationInteraction = (event: unknown) =>
             ),
           )
       : "Invalid configuration command.";
+    if (
+      command?.kind === "status" &&
+      !content.startsWith("Denied:") &&
+      !content.startsWith("Setup unavailable")
+    ) {
+      const intake = yield* Effect.serviceOption(Intake);
+      if (intake._tag === "Some") {
+        const health = yield* intake.value.status(input.guild_id);
+        content += `\nService observations since process start ${health.since}: missed messages ${health.missedMessages}; active failures ${health.active.join(", ") || "none observed"}; failures ${JSON.stringify(health.failures)}. Historical loss before process start unknown. No automatic replay. Translation unavailable.`;
+      }
+    }
     const payload = {
       content:
         content.length <= 1900 ? content : "Private configuration attached.",

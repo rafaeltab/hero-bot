@@ -107,14 +107,37 @@ export type Delivery = {
   state?: "partial" | "complete";
   attachments?: AttachmentCopy[];
 };
+export type FailureStage =
+  | "judgment"
+  | "database"
+  | "evidence"
+  | "report"
+  | "translation"
+  | "configuration";
+export type ServiceHealth = {
+  /** Process-local observation window; restart is unknown, never zero historical loss. */
+  since: string;
+  missedMessages: number;
+  failures: Partial<Record<FailureStage, number>>;
+  active: FailureStage[];
+};
 /** Versioned notification workflow. Claims are content-free and durable: failed or
  * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
- * Exact creations/edits share one report. Uncertain deliveries block automatic updates.
- * Actionable attachments are copied privately; AI contents and recovery remain unavailable. */
-
+ * Exact creations/edits share one report; uncertain delivery blocks updates.
+ * Actionable attachments are copied privately; AI attachment contents remain unavailable. No missed-event replay. */
 export class Intake extends Context.Service<
   Intake,
   {
+    status: (guildId: string) => Effect.Effect<ServiceHealth>;
+    /** Shared service failure path. No source/member/content parameters. Translation
+     * callers use missed=false: failed audit translation cannot invalidate judgment. */
+    reportFailure: (
+      guildId: string,
+      channelId: string | null,
+      stage: FailureStage,
+      missed?: boolean,
+    ) => Effect.Effect<void>;
+    recover: (guildId: string, stage: FailureStage) => Effect.Effect<void>;
     receive: (
       evidence: Evidence,
     ) => Effect.Effect<"exempt" | "duplicate" | "none" | "reported" | "failed">;

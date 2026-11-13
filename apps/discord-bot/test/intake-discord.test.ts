@@ -25,7 +25,11 @@ it.effect(
         provider: "openai/chat",
         assessedAt: "today",
       });
-      expect(result).toEqual({ rootId: "root", threadId: "thread" });
+      expect(result).toEqual({
+        rootId: "root",
+        threadId: "thread",
+        state: "complete",
+      });
       expect(requests.map((r) => r.method)).toEqual(["POST", "POST", "POST"]);
       expect(requests[0]).toMatchObject({
         url: expect.stringContaining("/channels/30/messages"),
@@ -113,6 +117,9 @@ it.effect(
       ),
       Effect.provide(
         Layer.succeed(Intake, {
+          status: () => Effect.die("unused"),
+          reportFailure: () => Effect.void,
+          recover: () => Effect.void,
           receive: (e) =>
             Effect.sync(() => {
               supplied.push(e);
@@ -185,6 +192,7 @@ it.effect(
   "partial edit hydrates the exact Discord version and ignores stale snapshots, metadata updates and foreign guilds",
   () => {
     const supplied: unknown[] = [];
+    const failures: unknown[] = [];
     const snapshot = {
       id: "100",
       channel_id: "20",
@@ -217,6 +225,7 @@ it.effect(
         { version: snapshot.edited_timestamp, text: "edited original" },
       ]);
       expect(supplied).toHaveLength(2);
+      expect(failures).toEqual([["10", null, "evidence", true]]);
     }).pipe(
       Effect.provide(
         Layer.succeed(DiscordREST, {
@@ -226,6 +235,12 @@ it.effect(
       ),
       Effect.provide(
         Layer.succeed(Intake, {
+          status: () => Effect.die("unused"),
+          reportFailure: (...args) =>
+            Effect.sync(() => {
+              failures.push(args);
+            }),
+          recover: () => Effect.void,
           receive: (e) =>
             Effect.sync(() => {
               supplied.push(e);
@@ -274,6 +289,7 @@ it.effect(
         },
       );
       expect(result).toEqual({
+        state: "complete",
         rootId: "original",
         threadId: "thread",
         channelId: "30",
