@@ -405,3 +405,68 @@ it.effect(
       expect(calls).toBe(1);
     }),
 );
+
+it.live(
+  "temporary provider failure recovers within one invocation and accounts for successful usage",
+  () =>
+    Effect.gen(function* () {
+      const events: unknown[] = [];
+      let calls = 0;
+      const text = yield* Effect.gen(function* () {
+        const ai = yield* TextGeneration;
+        return yield* ai.generate("private", "policy", {
+          guildId: "10",
+          purpose: "judgment",
+        });
+      }).pipe(
+        Effect.provide(
+          openAITextLive({
+            afterAttempt: (event) =>
+              Effect.sync(() => {
+                events.push(event);
+              }),
+            fetch: async () => {
+              calls++;
+              if (calls === 1)
+                return Response.json(
+                  { error: { message: "private", type: "server_error" } },
+                  { status: 503, headers: { "retry-after": "0" } },
+                );
+              return Response.json({
+                id: "r",
+                object: "chat.completion",
+                created: 0,
+                model: "controlled-model",
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: "assistant", content: "allowed" },
+                    finish_reason: "stop",
+                  },
+                ],
+                usage: {
+                  prompt_tokens: 4,
+                  completion_tokens: 5,
+                  total_tokens: 9,
+                },
+              });
+            },
+          }),
+        ),
+        Effect.provide(configuration),
+      );
+      expect(text).toBe("allowed");
+      expect(calls).toBe(2);
+      expect(events).toEqual([
+        { guildId: "10", purpose: "judgment", attempt: 1, outcome: "failed" },
+        {
+          guildId: "10",
+          purpose: "judgment",
+          attempt: 2,
+          outcome: "succeeded",
+          inputTokens: 4,
+          outputTokens: 5,
+        },
+      ]);
+    }),
+);

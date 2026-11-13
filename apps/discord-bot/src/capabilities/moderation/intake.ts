@@ -128,7 +128,6 @@ export const IntakeLive = Layer.effect(
           });
           yield* recover(e.guildId, "judgment");
           yield* recover(e.guildId, "configuration");
-          if (judgment.action === "none") return "none" as const;
           const record: RecordEntry = {
             evidence: supplied,
             systemPrompt,
@@ -140,40 +139,78 @@ export const IntakeLive = Layer.effect(
             observedRoles: a.actorRoles,
           };
           stage = "database";
-          yield* store.save(record);
-          stage = "report";
-          const fresh = yield* access.inspect(
-            e.guildId,
-            e.authorId,
-            config.roles,
+          return yield* store.serialize(
+            e,
+            Effect.gen(function* () {
+              const prior = yield* store.read(e.guildId, e.messageId);
+              if (judgment.action === "none" && prior.length === 0) {
+                yield* store.assessed(e);
+                return "none" as const;
+              }
+              yield* store.save(record);
+              yield* store.assessed(e);
+              const progress = yield* store.progress(e);
+              stage = "report";
+              if (progress.some((p) => p.state === "delivering"))
+                return yield* Effect.fail(
+                  new ModerationUnavailable({ reason: "discord" }),
+                );
+              const history = yield* store.read(e.guildId, e.messageId);
+              const latest = history.at(-1)?.record ?? record;
+              const original = history.find((h) => h.delivery !== null);
+              const delivery = original?.delivery ?? null;
+              channel =
+                original?.delivery?.channelId ??
+                original?.record.configuration.auditChannel ??
+                channel;
+              stage = "report";
+              const fresh = yield* access.inspect(
+                e.guildId,
+                e.authorId,
+                config.roles,
+              );
+              if (
+                !fresh.channels.some(
+                  (c) => c.id === channel && c.private && c.usable,
+                ) ||
+                fresh.problems.length
+              ) {
+                channel = null;
+                return yield* Effect.fail(
+                  new ModerationUnavailable({ reason: "discord" }),
+                );
+              }
+              stage = "database";
+              yield* store.delivering(e);
+              stage = "report";
+              const published = yield* reports.publish(
+                record,
+                (progress) => store.delivered(e, progress),
+                undefined,
+                {
+                  delivery,
+                  auditChannel: channel,
+                  latest,
+                  observedVersion: progress.at(-1)?.version ?? e.version,
+                },
+              );
+              stage = "database";
+              yield* store.delivered(e, published);
+              stage = published.attachments?.some(
+                (a) => a.status !== "available",
+              )
+                ? "evidence"
+                : "report";
+              if (published.state !== "complete")
+                return yield* Effect.fail(
+                  new ModerationUnavailable({ reason: "discord" }),
+                );
+              yield* recover(e.guildId, "database");
+              yield* recover(e.guildId, "report");
+              yield* recover(e.guildId, "evidence");
+              return "reported" as const;
+            }),
           );
-          if (
-            !fresh.channels.some(
-              (c) => c.id === channel && c.private && c.usable,
-            ) ||
-            fresh.problems.length
-          ) {
-            channel = null;
-            return yield* Effect.fail(
-              new ModerationUnavailable({ reason: "discord" }),
-            );
-          }
-          const delivery = yield* reports.publish(record, (progress) =>
-            store.delivered(e, progress),
-          );
-          stage = "database";
-          yield* store.delivered(e, delivery);
-          stage = delivery.attachments?.some((a) => a.status !== "available")
-            ? "evidence"
-            : "report";
-          if (delivery.state === "partial")
-            return yield* Effect.fail(
-              new ModerationUnavailable({ reason: "discord" }),
-            );
-          yield* recover(e.guildId, "database");
-          yield* recover(e.guildId, "report");
-          yield* recover(e.guildId, "evidence");
-          return "reported" as const;
         }).pipe(
           Effect.onInterrupt(() =>
             Effect.sync(() => {

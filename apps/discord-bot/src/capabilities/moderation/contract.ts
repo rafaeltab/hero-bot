@@ -99,6 +99,8 @@ export type AttachmentCopy = {
   checkedAt?: string;
 };
 export type Delivery = {
+  /** Actual root channel when it differs from this version's configuration snapshot. */
+  channelId?: string;
   rootId: string;
   threadId: string;
   /** Missing state on older records is unknown, never proof of completeness. */
@@ -119,8 +121,9 @@ export type ServiceHealth = {
   failures: Partial<Record<FailureStage, number>>;
   active: FailureStage[];
 };
-/** Creation-only notification workflow. Claims are content-free and durable: failed or
+/** Versioned notification workflow. Claims are content-free and durable: failed or
  * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
+ * Exact creations/edits share one report; uncertain delivery blocks updates.
  * Actionable attachments are copied privately; AI attachment contents remain unavailable. No missed-event replay. */
 export class Intake extends Context.Service<
   Intake,

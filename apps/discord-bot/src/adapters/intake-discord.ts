@@ -4,9 +4,13 @@ import { Effect, Layer } from "effect";
 import type {
   AttachmentCopy,
   Delivery,
+  RecordEntry,
 } from "../capabilities/moderation/contract.ts";
 import { ModerationUnavailable } from "../capabilities/moderation/contract.ts";
-import { Reports } from "../capabilities/moderation/ports.ts";
+import {
+  Reports,
+  type ReportUpdate,
+} from "../capabilities/moderation/ports.ts";
 import { createAttachmentSession } from "./attachment-acquisition.ts";
 
 const safe = { allowed_mentions: { parse: [] }, flags: 4 } as const;
@@ -16,6 +20,50 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
     Reports,
     Effect.gen(function* () {
       const rest = yield* DiscordREST;
+      const openReport = (
+        r: RecordEntry,
+        checkpoint: (d: Delivery) => Effect.Effect<void, ModerationUnavailable>,
+        update?: ReportUpdate,
+      ) =>
+        Effect.gen(function* () {
+          const channel = update?.auditChannel ?? r.configuration.auditChannel;
+          if (!channel)
+            return yield* Effect.fail(
+              new ModerationUnavailable({ reason: "configuration" }),
+            );
+          const latest = update?.latest ?? r;
+          const e = latest.evidence;
+          const body = {
+            ...safe,
+            content:
+              `Automatic report — ${e.authorId}\nRecommendation: ${latest.judgment.action}\nReason: ${latest.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${latest.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: unavailable.\nAttachment preservation: see evidence thread and private delivery record; partial until confirmed.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nNewest assessed source version: ${latest.evidence.version}\nNewest observed source version: ${update?.observedVersion ?? e.version}\nEarlier actionable evidence remains in the thread.\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
+                0,
+                1900,
+              ),
+          };
+          const root = update?.delivery
+            ? yield* rest.updateMessage(channel, update.delivery.rootId, body)
+            : yield* rest.createMessage(channel, body);
+          const delivery: Delivery = {
+            ...(r.configuration.auditChannel !== channel
+              ? { channelId: channel }
+              : {}),
+            rootId: update?.delivery?.rootId ?? root.id,
+            threadId: update?.delivery?.threadId ?? "",
+            state: "partial",
+            attachments: [],
+          };
+          yield* checkpoint(delivery);
+          const thread = update?.delivery
+            ? { id: update.delivery.threadId }
+            : yield* rest.createThreadFromMessage(channel, root.id, {
+                name: "Automatic report evidence",
+                auto_archive_duration: 10080,
+              });
+          delivery.threadId = thread.id;
+          yield* checkpoint(delivery);
+          return delivery;
+        });
       return Reports.of({
         refresh: (delivery) =>
           Effect.gen(function* () {
@@ -49,39 +97,11 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
               () => new ModerationUnavailable({ reason: "discord" }),
             ),
           ),
-        publish: (r, checkpoint = () => Effect.void, acquisition) =>
+        publish: (r, checkpoint = () => Effect.void, acquisition, update) =>
           Effect.gen(function* () {
-            const channel = r.configuration.auditChannel;
-            if (!channel)
-              return yield* Effect.fail(
-                new ModerationUnavailable({ reason: "configuration" }),
-              );
             const e = r.evidence;
-            const root = yield* rest.createMessage(channel, {
-              ...safe,
-              content:
-                `Automatic report — ${e.authorId}\nRecommendation: ${r.judgment.action}\nReason: ${r.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${r.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: unavailable.\nAttachment preservation: see evidence thread and private delivery record; partial until confirmed.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nSource version: ${e.version}\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
-                  0,
-                  1900,
-                ),
-            });
-            const delivery: Delivery = {
-              rootId: root.id,
-              threadId: "",
-              state: "partial",
-              attachments: [],
-            };
-            yield* checkpoint(delivery);
-            const thread = yield* rest.createThreadFromMessage(
-              channel,
-              root.id,
-              {
-                name: "Automatic report evidence",
-                auto_archive_duration: 10080,
-              },
-            );
-            delivery.threadId = thread.id;
-            yield* checkpoint(delivery);
+            const delivery = yield* openReport(r, checkpoint, update);
+            const thread = { id: delivery.threadId };
             const session = acquisition ?? createAttachmentSession(transport);
             for (const metadata of e.attachments) {
               const m = metadata as {
@@ -178,9 +198,12 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
             }
             if (e.attachments.length === 0)
               return {
-                rootId: root.id,
-                threadId: thread.id,
+                ...(delivery.channelId
+                  ? { channelId: delivery.channelId }
+                  : {}),
                 state: "complete" as const,
+                rootId: delivery.rootId,
+                threadId: thread.id,
               };
             delivery.state = complete ? "complete" : "partial";
             return delivery;

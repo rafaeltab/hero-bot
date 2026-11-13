@@ -78,22 +78,32 @@ it("executable moderation path judges actionable/harmless creations, exempts own
       });
     });
     const observed = JSON.parse(await readFile(path, "utf8"));
-    expect(observed.aiCalls).toBe(2);
+    expect(observed.aiCalls).toBe(3);
     const writes = observed.calls.filter(
       (r: { method: string }) => r.method !== "GET",
     );
     expect(
       writes.every(
         (r: { method: string; url: string }) =>
-          r.method === "POST" &&
-          (/\/commands$/.test(r.url) ||
-            /\/channels\/(30|thread)\/messages$/.test(r.url) ||
-            r.url.endsWith("/channels/30/messages/root/threads")),
+          (r.method === "PATCH" &&
+            r.url.endsWith("/channels/30/messages/root")) ||
+          (r.method === "POST" &&
+            (/\/commands$/.test(r.url) ||
+              /\/channels\/(30|thread)\/messages$/.test(r.url) ||
+              r.url.endsWith("/channels/30/messages/root/threads"))),
       ),
     ).toBe(true);
-    const messages = writes.filter((r: { url: string }) =>
-      r.url.endsWith("/messages"),
-    );
+    expect(
+      writes.filter((r: { method: string }) => r.method === "PATCH"),
+    ).toMatchObject([
+      { body: { content: expect.stringContaining("Recommendation: none") } },
+    ]);
+    const messages = writes
+      .slice(
+        0,
+        writes.findIndex((r: { method: string }) => r.method === "PATCH"),
+      )
+      .filter((r: { url: string }) => r.url.endsWith("/messages"));
     expect(messages[0].body.content).toContain("Recommendation: ban");
     expect(messages[0].body.content).toContain("Execution: disabled");
     expect(
@@ -122,6 +132,13 @@ it("executable moderation path judges actionable/harmless creations, exempts own
             },
             delivery: { rootId: "root", threadId: "thread", state: "complete" },
           },
+          {
+            record: {
+              evidence: { version: "2026-11-13T00:01:00Z", text: "hello" },
+              judgment: { action: "none" },
+            },
+            delivery: { rootId: "root", threadId: "thread" },
+          },
         ]);
         expect(yield* s.read(guildId, "101")).toEqual([]);
         expect(yield* s.read(guildId, "102")).toEqual([]);
@@ -132,9 +149,61 @@ it("executable moderation path judges actionable/harmless creations, exempts own
     expect(output).not.toContain("bilibili");
     child.kill("SIGTERM");
     expect(await exited).toEqual({ code: 130, signal: null });
+    const restarted = spawn(
+      process.execPath,
+      ["test/support/intake-process.mjs"],
+      {
+        cwd: new URL("..", import.meta.url),
+        env: {
+          HERO_ENV: "development",
+          DEV_DISCORD_BOT_TOKEN: "offline-secret",
+          DEV_DISCORD_APPLICATION_ID: "123",
+          DEV_MODERATION_GUILD_IDS: guildId,
+          HERO_AI_API_KEY: "offline-key",
+          HERO_AI_MODEL: "gpt-6-luna",
+          DATABASE_URL: process.env.HERO_TEST_DATABASE_URL,
+          HERO_TEST_REPORT_PATH: path,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const stopped = new Promise((resolve) =>
+      restarted.once("exit", (code, signal) => resolve({ code, signal })),
+    );
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(Error("restart timed out")),
+          5000,
+        );
+        restarted.stdout.on("data", (chunk) => {
+          if (String(chunk).includes("intake scenario complete")) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+        restarted.once("exit", () => {
+          clearTimeout(timer);
+          reject(Error("restart exited"));
+        });
+      });
+      const replayed = JSON.parse(await readFile(path, "utf8"));
+      expect(replayed.aiCalls).toBe(0);
+      expect(
+        replayed.calls.filter(
+          (r: { method: string; url: string }) =>
+            r.method !== "GET" && !r.url.endsWith("/commands"),
+        ),
+      ).toEqual([]);
+      restarted.kill("SIGTERM");
+      expect(await stopped).toEqual({ code: 130, signal: null });
+    } finally {
+      restarted.kill("SIGKILL");
+      await stopped;
+    }
   } finally {
     child.kill("SIGKILL");
     await exited;
     await rm(dir, { recursive: true, force: true });
   }
-});
+}, 15000);
