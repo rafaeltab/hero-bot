@@ -60,7 +60,7 @@ export const IntakeLive = Layer.effect(
             try: () => parseJudgment(raw),
             catch: () => new ModerationUnavailable({ reason: "configuration" }),
           });
-          if (judgment.action === "none") return "none" as const;
+
           const record: RecordEntry = {
             evidence: supplied,
             systemPrompt,
@@ -71,26 +71,53 @@ export const IntakeLive = Layer.effect(
             assessedAt: new Date().toISOString(),
             observedRoles: a.actorRoles,
           };
-          yield* store.save(record);
-          const fresh = yield* access.inspect(
-            e.guildId,
-            e.authorId,
-            config.roles,
+          return yield* store.serialize(
+            e,
+            Effect.gen(function* () {
+              const prior = yield* store.read(e.guildId, e.messageId);
+              if (judgment.action === "none" && prior.length === 0) {
+                yield* store.assessed(e);
+                return "none" as const;
+              }
+              yield* store.save(record);
+              yield* store.assessed(e);
+              const progress = yield* store.progress(e);
+              if (progress.some((p) => p.state === "delivering"))
+                return yield* Effect.fail(
+                  new ModerationUnavailable({ reason: "discord" }),
+                );
+              const history = yield* store.read(e.guildId, e.messageId);
+              const latest = history.at(-1)?.record ?? record;
+              const original = history.find((h) => h.delivery !== null);
+              const delivery = original?.delivery ?? null;
+              channel = original?.record.configuration.auditChannel ?? channel;
+              const fresh = yield* access.inspect(
+                e.guildId,
+                e.authorId,
+                config.roles,
+              );
+              if (
+                !fresh.channels.some(
+                  (c) => c.id === channel && c.private && c.usable,
+                ) ||
+                fresh.problems.length
+              ) {
+                channel = null;
+                return yield* Effect.fail(
+                  new ModerationUnavailable({ reason: "discord" }),
+                );
+              }
+              yield* store.delivering(e);
+              const published = yield* reports.publish(record, {
+                delivery,
+                auditChannel: channel,
+                latest,
+                observedVersion: progress.at(-1)?.version ?? e.version,
+              });
+              yield* store.delivered(e, published);
+              return "reported" as const;
+            }),
           );
-          if (
-            !fresh.channels.some(
-              (c) => c.id === channel && c.private && c.usable,
-            ) ||
-            fresh.problems.length
-          ) {
-            channel = null;
-            return yield* Effect.fail(
-              new ModerationUnavailable({ reason: "discord" }),
-            );
-          }
-          const delivery = yield* reports.publish(record);
-          yield* store.delivered(e, delivery);
-          return "reported" as const;
         }).pipe(
           Effect.catch(() =>
             reports.notify(e.guildId, channel).pipe(

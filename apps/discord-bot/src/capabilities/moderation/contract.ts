@@ -77,9 +77,10 @@ export type RecordEntry = {
   systemPrompt?: string;
 };
 export type Delivery = { rootId: string; threadId: string };
-/** Creation-only notification workflow. Claims are content-free and durable: failed or
+/** Versioned notification workflow. Claims are content-free and durable: failed or
  * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
- * Later edit/context/attachment/retry capabilities are explicitly unavailable. */
+ * Exact creations/edits share one report. Uncertain deliveries block automatic updates.
+ * Context/attachment/retry capabilities are explicitly unavailable. */
 export class Intake extends Context.Service<
   Intake,
   {

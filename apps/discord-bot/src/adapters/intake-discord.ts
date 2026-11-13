@@ -10,26 +10,32 @@ export const reportsDiscordLayer = Layer.effect(
   Effect.gen(function* () {
     const rest = yield* DiscordREST;
     return Reports.of({
-      publish: (r) =>
+      publish: (r, update) =>
         Effect.gen(function* () {
-          const channel = r.configuration.auditChannel;
+          const channel = update?.auditChannel ?? r.configuration.auditChannel;
           if (!channel)
             return yield* Effect.fail(
               new ModerationUnavailable({ reason: "configuration" }),
             );
-          const e = r.evidence;
-          const root = yield* rest.createMessage(channel, {
+          const latest = update?.latest ?? r;
+          const e = latest.evidence;
+          const body = {
             ...safe,
             content:
-              `Automatic report — ${e.authorId}\nRecommendation: ${r.judgment.action}\nReason: ${r.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${r.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: unavailable.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nSource version: ${e.version}\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
+              `Automatic report — ${e.authorId}\nRecommendation: ${latest.judgment.action}\nReason: ${latest.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${latest.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: unavailable.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nNewest assessed source version: ${e.version}\nNewest observed source version: ${update?.observedVersion ?? e.version}\nEarlier actionable evidence remains in the thread.\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
                 0,
                 1900,
               ),
-          });
-          const thread = yield* rest.createThreadFromMessage(channel, root.id, {
-            name: "Automatic report evidence",
-            auto_archive_duration: 10080,
-          });
+          };
+          const root = update?.delivery
+            ? yield* rest.updateMessage(channel, update.delivery.rootId, body)
+            : yield* rest.createMessage(channel, body);
+          const thread = update?.delivery
+            ? { id: update.delivery.threadId }
+            : yield* rest.createThreadFromMessage(channel, root.id, {
+                name: "Automatic report evidence",
+                auto_archive_duration: 10080,
+              });
           const text = JSON.stringify(r, null, 2);
           for (let offset = 0; offset < text.length; ) {
             let end = Math.min(offset + 1800, text.length);
@@ -44,7 +50,10 @@ export const reportsDiscordLayer = Layer.effect(
             });
             offset = end;
           }
-          return { rootId: root.id, threadId: thread.id };
+          return {
+            rootId: update?.delivery?.rootId ?? root.id,
+            threadId: thread.id,
+          };
         }).pipe(
           Effect.mapError(
             () => new ModerationUnavailable({ reason: "discord" }),

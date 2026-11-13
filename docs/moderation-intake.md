@@ -1,8 +1,7 @@
-# Notification-only text intake (#30)
+# Notification-only versioned text intake (#30, #31)
 
-The `--moderation` executable now consumes guild `MESSAGE_CREATE` events through dfx.
-The connection-only `--discord-development` smoke path is unchanged. This is the
-creation-only slice: edits, reply/nearby context acquisition, moderation history,
+The `--moderation` executable now consumes guild `MESSAGE_CREATE` and `MESSAGE_UPDATE` events through dfx.
+The connection-only `--discord-development` smoke path is unchanged. This slice assesses exact creations/edits; reply/nearby context acquisition, moderation history,
 attachment contents/copies, English translations, budgets, recovery and confidential
 intake are unavailable. Their absence is recorded in each supplied evidence packet;
 metadata and an available quoted message are not claims of inspected attachments or
@@ -39,7 +38,7 @@ never silently overwritten. View/edit with `/moderation config show` and
 The prompt owns policy classifications; code validates the compact judgment.
 
 Start `pnpm --filter @hero-bot/discord-bot moderation`. This is a paid AI path for
-non-exempt creations. Owner, designated Moderator roles, audit/reporting routes and
+non-exempt creations and edits. Owner, designated Moderator roles, audit/reporting routes and
 their threads bypass AI and storage; mapped Owner/Admin roles alone and course
 roles do not create exemptions. An unconfigured or unsafe server blocks its own
 intake. Private `/channel-status` reports delivered capabilities and later omissions;
@@ -63,16 +62,75 @@ evidence. Mentions and embed unfurling are suppressed. There are no action contr
 message deletion, member bans or role changes. Audit discussion is not stored,
 judged or parsed as a command.
 
-Content-free claims are inserted before calling AI. Concurrent duplicates and
-restarts cannot call again or create additional roots. A failed/interrupted claim
-is deliberately not replayed. On invalid AI output, unavailable AI, failed database
-preservation, or failed private delivery, intake reports failure rather than `none`.
-It attempts a content-free service notification on the verified private route, then
-sanitized logging. Delivery is marked complete only after root, thread and all text
-succeed; a null delivery is incomplete/unknown, even if Discord received a partial
-root/thread. No automatic retries, catch-up or repair occur in this slice. The
-later failure ticket owns aggregation/health and recovery. Do not present the
-current per-failure service notification as aggregate missed-message accounting.
+Content-free version claims are inserted before calling AI. Concurrent duplicates and
+restarts cannot call again for the same server/message/version. A failed/interrupted
+claim is deliberately not replayed. An ordinary `none` retains only its identity and
+progress, without text or judgment. After a source becomes actionable, later assessed
+versions (including `none`) are retained. Earlier discarded harmless versions are not
+reconstructed. These versions are one source finding, not additional violations.
+
+Each source shares one report root and evidence thread. Each completed version appends
+its exact JSON record to the thread; concatenate that version's ordered chunks to
+reconstruct it. The root shows the newest **assessed source version**, not the last AI
+call to finish, and separately shows the newest observed version at update time.
+Previously actionable evidence remains in the thread and database after a harmless
+edit. An interrupted/unavailable newer assessment does not imply a harmless judgment.
+A configuration route change does not move an existing report: the original private
+channel is rechecked before updating it. If it is no longer safe/available, delivery
+fails rather than sending evidence elsewhere.
+
+Complete Discord update payloads are used directly. For partial updates the adapter
+fetches the message only from Discord and requires the returned edit timestamp to match the event. If another edit has
+already replaced that snapshot, it emits a content-free unavailability diagnostic;
+it never labels the newer contents as the older version. Metadata-only updates are
+ignored. No ordinary-message cache or archive is introduced. Missed/deleted/unavailable
+snapshots are not automatically replayed. Linked destinations are never fetched.
+
+On invalid AI output, unavailable AI, failed database preservation, or failed private
+delivery, intake reports failure rather than `none`. It attempts a content-free
+service notification on the verified private route, then sanitized logging. The
+later failure ticket owns aggregation/health and recovery; current per-failure
+notifications are not aggregate missed-message accounting.
+
+### Durable progress and uncertainty
+
+The store exposes content-free `progress(evidence)` per server/source with these states:
+
+| State        | Meaning after interruption/restart                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `claimed`    | Invocation reserved; AI completion/persistence unknown. Never automatically invoke again.                                        |
+| `assessed`   | Valid judgment completed. An ordinary harmless result has no retained record; a retained record has not begun external delivery. |
+| `delivering` | External delivery reserved; root/thread/chunks or acknowledgment may be partial/unknown. Never blindly resend.                   |
+| `delivered`  | Root, thread and all evidence chunks acknowledged and delivery identity persisted.                                               |
+| `legacy`     | Pre-#31 content-free claim; no replay. Retained legacy records migrate to delivered or uncertain delivering.                     |
+
+PostgreSQL uniqueness protects version claims. A session advisory lock serializes
+preservation and delivery per source across processes; AI calls remain concurrent.
+Schema upgrade uses a separate transaction/advisory lock. Locks release on interruption
+or process loss. The external-delivery reservation is committed **before** Discord
+requests; acknowledgment is stored only after every request completes. A crash before
+reservation permits a later new version to create the source's first root. A crash
+at/after reservation blocks automatic delivery for the source, even if no Discord
+request actually arrived. Later versions are still assessed and preserved. A failed
+acknowledgment write has the same conservative outcome. This deliberately sacrifices
+automatic delivery availability where exactly-once external effects cannot be proven.
+It does not promise exactly-once AI or Discord execution, retry uncertain findings,
+or catch up messages missed during an outage.
+
+For private operator inspection, load the ignored application environment and use
+PostgreSQL tooling on that development database. This query emits no source contents:
+
+```sql
+SELECT guild_id, message_id, version, state,
+       record IS NOT NULL AS evidence_retained,
+       delivery IS NOT NULL AS delivery_acknowledged
+FROM moderation_intake ORDER BY guild_id, message_id, version;
+```
+
+A null delivery is incomplete/unknown, even if a root exists in Discord. Do not clear
+claims, reset `delivering`, delete rows, or rerun live source content as a repair.
+Inspect the original private thread and preserved versions; automated reconciliation
+and recovery are not supplied here. No punitive permissions or actions are needed.
 
 ## Reproducible offline QA and fault procedures
 
@@ -81,7 +139,7 @@ No Discord credentials, paid AI or production permissions are needed:
 ```sh
 make infra-start
 pnpm build
-pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-process.test.ts
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-process.test.ts test/intake-versions.test.ts
 pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts test/intake-discord.test.ts test/intake-persistence.test.ts test/ai.test.ts
 pnpm check
 ```
@@ -90,8 +148,28 @@ The executable test installs controlled gateway/REST and provider HTTP transport
 around the real dfx/AI SDK adapters and disposable PostgreSQL. It sends actionable,
 harmless, owner-exempt and duplicate events, reads retained records through the
 store, inspects the actual REST report bodies, and rejects any punitive request.
-The process exits on SIGTERM. The existing lifetime test independently observes
+It edits an actionable source to harmless on the same root, exits on SIGTERM,
+then restarts and replays creations/edits without new AI or report writes. The existing lifetime test independently observes
 both database pools disappearing after termination.
+
+The `test/intake-versions.test.ts` suite uses disposable PostgreSQL with controlled
+external boundaries. To reproduce individual scenarios, run:
+
+```sh
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-versions.test.ts -t 'out-of-order'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-versions.test.ts -t 'concurrent versions'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-versions.test.ts -t 'acknowledgment loss'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-versions.test.ts -t 'interruption'
+```
+
+The interruption case stops an in-flight AI call after its durable claim and reopens
+the adapter. Additional interruption cases stop after preservation before delivery
+reservation, and inside reserved external delivery, then assert the safe versus
+uncertain restart behavior. Acknowledgment loss simulates an accepted external root whose response
+is lost, reopens the adapter, and asserts no replacement root, with later harmless
+versions retained. Out-of-order completion delays the older provider response while
+a newer version finishes through another store instance. Concurrent cases assert
+one root and one invocation per version under independent database connections.
 
 For specific repeatable faults, append `-t 'invalid AI output'`,
 `-t 'unavailable'`, `-t 'private delivery'`, or
@@ -102,7 +180,17 @@ and replays the same identity to prove restart deduplication. Do not replay live
 source content to diagnose failures. Inspect the retained private record and
 service readiness instead; incomplete delivery is not automatically repaired.
 
-For #40's live test, submit an allowed text and an unrelated Bilibili example from
+For #40's live edit walkthrough, use one ordinary test member's message. Start with
+harmless text (no report or retained contents), edit it to the unrelated Bilibili
+example (one root/thread with that exact edit timestamp), then edit to harmless
+(one updated root recommending `none`, both later versions retained, original ban
+recommendation still present in the thread). Make another actionable edit: it must
+append to the same thread. Record source timestamps and root/thread identities.
+Restart the development bot: there is no automatic historical scan or second root.
+Only a genuinely new edit should cause another judgment. Verify ordinary members
+cannot see either root or thread and source/member roles remain unchanged.
+
+For #40's other live tests, submit an allowed text and an unrelated Bilibili example from
 an ordinary test member, then a link from the owner/designated moderator and within
 an audit thread. Inspect private root/thread visibility as an ordinary account,
 exact source/provenance/omissions, and unchanged source/member roles. Record actual

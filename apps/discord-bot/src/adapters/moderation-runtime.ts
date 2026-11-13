@@ -99,7 +99,7 @@ export const runModerationCommands = (
         ),
       );
     yield* Console.log(
-      "notification-only configuration ready; creation judgment available; edits/context/attachments unavailable",
+      "notification-only configuration ready; creation/edit judgment available; context/attachments unavailable",
     );
     return yield* Stream.mapEffect(
       Stream.fromQueue(events),

@@ -87,6 +87,16 @@ const scenario = (
             })),
         }),
         Layer.succeed(IntakeStore, {
+          serialize: (_e, task) => task,
+          progress: () =>
+            Effect.succeed(
+              records.map((r) => ({
+                version: r.evidence.version,
+                state: "assessed",
+              })),
+            ),
+          assessed: () => Effect.void,
+          delivering: () => Effect.void,
           claim: (e) =>
             options.fault === "claim"
               ? fail()
@@ -133,7 +143,9 @@ const scenario = (
               : Effect.sync(() => {
                   inputs.push(p);
                   return (
-                    options.raw ??
+                    (p.includes("authorized")
+                      ? '{"action":"none","reason":"Allowed.","offendingUrls":[]}'
+                      : options.raw) ??
                     JSON.stringify({
                       action: "ban",
                       reason: "Platform presumption; piracy unverified.",
@@ -328,5 +340,28 @@ it.effect(
           expect([records, reports]).toEqual([[], []]);
         }),
       { raw: "bad", fault: "notify" },
+    ),
+);
+
+it.effect(
+  "actionable to harmless edits retain both versions and use the same report identity",
+  () =>
+    scenario((i, records, reports) =>
+      Effect.gen(function* () {
+        expect(yield* i.receive(evidence)).toBe("reported");
+        expect(
+          yield* i.receive({
+            ...evidence,
+            version: "2026-11-13T00:01:00Z",
+            text: "authorized",
+          }),
+        ).toBe("reported");
+        expect(records.map((r) => r.evidence.version)).toEqual([
+          "2026-11-13T00:00:00Z",
+          "2026-11-13T00:01:00Z",
+        ]);
+        expect(records[1]?.judgment.action).toBe("none");
+        expect(reports).toHaveLength(2);
+      }),
     ),
 );

@@ -46,18 +46,68 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
         }),
         (p) => Effect.promise(() => p.end()),
       );
+      const locks = yield* Effect.acquireRelease(
+        Effect.sync(() => new Pool({ connectionString: url, max: 2 })),
+        (p) => Effect.promise(() => p.end()),
+      );
       const db = drizzle(pool);
       const t = sql.identifier(table);
       yield* query(() =>
-        db.execute(
-          sql`create table if not exists ${t} (guild_id text not null,message_id text not null,version text not null,record jsonb,delivery jsonb,primary key(guild_id,message_id,version))`,
-        ),
+        db.transaction(async (tx) => {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${table},0))`,
+          );
+          await tx.execute(
+            sql`create table if not exists ${t} (guild_id text not null,message_id text not null,version text not null,record jsonb,delivery jsonb,primary key(guild_id,message_id,version))`,
+          );
+          await tx.execute(
+            sql`alter table ${t} add column if not exists state text not null default 'legacy'`,
+          );
+          // Legacy partial deliveries are uncertain; never blindly create another root.
+          await tx.execute(
+            sql`update ${t} set state=case when delivery is not null then 'delivered' else 'delivering' end where record is not null and state='legacy'`,
+          );
+        }),
       );
+      const state = (
+        e: { guildId: string; messageId: string; version: string },
+        value: string,
+      ) =>
+        query(async () => {
+          await db.execute(
+            sql`update ${t} set state=${value} where guild_id=${e.guildId} and message_id=${e.messageId} and version=${e.version}`,
+          );
+        });
       return IntakeStore.of({
+        serialize: (e, task) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const client = yield* Effect.acquireRelease(
+                query(() => locks.connect()),
+                (c) => Effect.sync(() => c.release(true)),
+              );
+              yield* query(() =>
+                client.query(
+                  "select pg_advisory_lock(hashtextextended($1, 0))",
+                  [JSON.stringify([table, e.guildId, e.messageId])],
+                ),
+              );
+              return yield* task;
+            }),
+          ),
+        progress: (e) =>
+          query(async () => {
+            const result = await db.execute<{ version: string; state: string }>(
+              sql`select version,state from ${t} where guild_id=${e.guildId} and message_id=${e.messageId} order by version::timestamptz`,
+            );
+            return result.rows;
+          }),
+        assessed: (e) => state(e, "assessed"),
+        delivering: (e) => state(e, "delivering"),
         claim: (e) =>
           query(async () => {
             const r = await db.execute(
-              sql`insert into ${t} (guild_id,message_id,version) values (${e.guildId},${e.messageId},${e.version}) on conflict do nothing returning message_id`,
+              sql`insert into ${t} (guild_id,message_id,version,state) values (${e.guildId},${e.messageId},${e.version},'claimed') on conflict do nothing returning message_id`,
             );
             return r.rows.length === 1;
           }),
@@ -72,7 +122,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
         delivered: (e, delivery) =>
           query(async () => {
             const result = await db.execute(
-              sql`update ${t} set delivery=${JSON.stringify(delivery)}::jsonb where guild_id=${e.guildId} and message_id=${e.messageId} and version=${e.version} and record is not null and delivery is null returning message_id`,
+              sql`update ${t} set state='delivered',delivery=${JSON.stringify(delivery)}::jsonb where guild_id=${e.guildId} and message_id=${e.messageId} and version=${e.version} and record is not null and delivery is null returning message_id`,
             );
             if (result.rows.length !== 1) throw Error();
           }),
@@ -82,7 +132,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
               record: RecordEntry;
               delivery: Delivery | null;
             }>(
-              sql`select record,delivery from ${t} where guild_id=${guildId} and message_id=${messageId} and record is not null order by version`,
+              sql`select record,delivery from ${t} where guild_id=${guildId} and message_id=${messageId} and record is not null order by version::timestamptz`,
             );
             return r.rows;
           }),
