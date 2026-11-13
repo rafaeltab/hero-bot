@@ -220,14 +220,13 @@ belong with those later capabilities; this runner is their starting point.
 
 ## Attachment preservation (#33)
 
-Only actionable triggering-message attachments are acquired. The application downloads
+Supported triggering-message attachments are acquired before judgment. Only actionable originals are privately copied. The application downloads
 HTTPS `cdn.discordapp.com/attachments/` URLs without following redirects. It never
 fetches linked sites. A judgment-scoped cache enforces one **20 MiB total** budget
 using actual streamed bytes and metadata preflight checks. All originals are attempted,
-including originals beyond the future four-item AI selection limit. AI image/file
-contents remain unavailable (#34); copying does not mean the model inspected them.
+including originals beyond the four-item AI selection limit. AI selection and private copying use the same session; copying does not mean the model inspected an attachment.
 The internal `AttachmentSession` passed to `Reports.publish` is the shared path for
-future AI acquisition: create it once per judgment, pass the same session to copying,
+AI acquisition: create it once per judgment, pass the same session to copying,
 and never create a second download budget. Neither bytes nor blobs enter PostgreSQL.
 
 The private thread receives original bytes as Discord uploads with the original
@@ -289,3 +288,86 @@ availability command and confirm `missing`. Use the offline procedures above for
 permission/download/upload faults rather than broad production permission changes.
 The agent never deletes test sources/copies. Live provider/Discord observations
 remain #40's developer checkpoint; controlled tests are not live QA evidence.
+
+## Supplied image and file evidence (#34)
+
+After exemptions and the durable version claim, intake creates one acquisition
+session. It selects at most four supported original contents, checks actual length
+against declared size and verifies matching signatures. The installed `ai@7.0.163`
+and `@ai-sdk/openai@4.0.109` chat adapter sends PNG, JPEG, GIF and WebP as inline
+`image_url` data, and PDF as inline `file_data`, together with original text and
+metadata in one user message. The configured policy stays in the system/developer
+message. No provider URL fetching, tools, redirects or linked-site browsing occurs.
+The model remains locked to `gpt-6-luna`.
+
+These are **offline protocol-verified formats**, not a claim of live model
+acceptance or OCR quality. Other documents (DOCX, spreadsheets and text files),
+audio and video are unsupported by this path. There is no implicit conversion or
+fallback model. Signature checking is not full decoding: damaged/encrypted PDFs,
+unreadable pages and animation frames may still be uninterpretable. The prompt
+requires material gaps to be disclosed. Provider rejection fails the judgment as
+a service problem, never as `none`.
+
+Each source attachment has an indexed `attachmentInputs` entry with identity,
+filename, `supplied`/`unavailable`, and either verified MIME/actual byte length or
+an omission reason. Reasons distinguish malformed metadata, unsupported format,
+four-content limit, unavailable acquisition/download, shared download budget,
+length mismatch/truncation and unreadable/mismatched signatures. `supplied` means
+the bytes were sent in a successful judgment request; it does not prove every
+page or pixel was understood. File instructions cannot override policy. Exact
+metadata/selection accompanies the judgment in PostgreSQL and its private evidence
+thread. Bytes remain transient and never enter database records.
+
+The same cached session is passed to private copying. Its single **20 MiB actual
+streamed download budget** covers AI and preservation together, including failed
+downloads and dishonest size declarations. Copying tries every original, including
+unsupported formats and contents beyond the AI selection limit. A cache hit costs
+no second download. AI omission and incomplete copying are distinct. An ordinary
+`none` can incur transient AI downloads but retains no contents, judgment or private
+attachment archive. Existing edit, duplicate and uncertain delivery semantics apply.
+
+### Reproduce attachment QA
+
+Fixtures and expected findings: `evaluations/fixtures/attachments/README.md`.
+No credentials needed:
+
+```sh
+make infra-start
+pnpm build
+pnpm --filter @hero-bot/discord-bot exec vitest run test/ai.test.ts test/intake.test.ts test/attachment-workflow.test.ts test/attachment-evidence.test.ts
+pnpm check
+```
+
+The workflow suite exercises installed provider HTTP and dfx multipart adapters
+with disposable PostgreSQL. It compares original bytes at both transports,
+records supplied/omitted identities, proves four AI inputs versus five private
+originals, spends 15 MiB on AI then rejects a 6 MiB preservation download, and
+verifies harmless non-retention and sanitized provider rejection. Filter with
+`-t 'provider attachment rejection'`, `-t 'separate download budgets'`, or
+`-t 'original png'`. The intake suite covers malformed/unsupported inputs, missing
+acquisition, download failure, truncation and wrong signatures. Existing process
+and version suites cover restart, edits, deduplication and partial delivery.
+
+Explicit paid demonstration (one invocation with the original PNG and PDF; no
+Discord access; requires valid provider configuration in the ignored environment):
+
+```sh
+pnpm build
+pnpm --filter @hero-bot/discord-bot exec node --env-file-if-exists=.env tooling/evaluate-attachments.mjs --paid --output /tmp/hero-attachment-paid.json
+```
+
+The report records fixture hashes/input, prompt snapshot/hash, adapter/model,
+commit, expected recommendation/URLs and actual validated result or sanitized
+failure. Compare the reason against the rubric: the PDF override must not become
+policy and no external verification may be claimed. Provider failure is a
+limitation, not proof of model support. This checkout had no configured AI key/model,
+so no paid success is claimed.
+
+For #40, use an ordinary test member to send the PNG/PDF with neutral accompanying
+text, inspect the private finding and supplied-input entries, then inspect private
+original copies. Repeat with five PDFs, a video and malformed PDF to inspect
+omissions. Check an allowed screenshot/harmless response leaves no archive; edit
+an actionable source to harmless and confirm older evidence remains. Verify the
+PDF injection is ignored under the saved policy. Record actual readability,
+recommendations and unchanged source/member roles. These live observations remain
+the developer's final QA checkpoint.

@@ -65,6 +65,7 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
           return delivery;
         });
       return Reports.of({
+        attachments: () => createAttachmentSession(transport),
         refresh: (delivery) =>
           Effect.gen(function* () {
             const updated = structuredClone(delivery);

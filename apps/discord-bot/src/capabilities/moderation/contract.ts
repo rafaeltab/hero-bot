@@ -48,7 +48,18 @@ export type Judgment = {
 };
 /** Complete original gateway evidence; embeds and attributed quotes remain unmodified.
  * Linked destinations are never retrieved; original attachments may be privately copied. */
+export type AttachmentInput = {
+  index: number;
+  attachmentId: string | null;
+  filename: string | null;
+  status: "supplied" | "unavailable";
+  reason?: string;
+  mediaType?: string;
+  bytes?: number;
+};
 export type Evidence = {
+  /** Supplied means sent to the provider, not proof that every page/pixel was understood. */
+  attachmentInputs?: AttachmentInput[];
   guildId: string;
   messageId: string;
   version: string;
@@ -110,7 +121,7 @@ export type Delivery = {
 /** Versioned notification workflow. Claims are content-free and durable: failed or
  * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
  * Exact creations/edits share one report. Uncertain deliveries block automatic updates.
- * Actionable attachments are copied privately; AI contents and recovery remain unavailable. */
+ * Supported original image/PDF contents are supplied transiently; actionable originals are copied privately. */
 
 export class Intake extends Context.Service<
   Intake,

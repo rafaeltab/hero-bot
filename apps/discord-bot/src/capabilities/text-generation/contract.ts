@@ -6,7 +6,13 @@ export class TextGenerationUnavailable extends Data.TaggedError(
   readonly operation: "configuration" | "generate";
 }> {}
 
-/** Plain text only: no moderation judgment, tools, retrieval or agent actions. */
+/** Transient original attachment content. Never persist these bytes. */
+export type AttachmentContent = {
+  readonly filename: string;
+  readonly mediaType: string;
+  readonly data: Uint8Array;
+};
+/** Text and supplied image/PDF input; no tools, retrieval or agent actions. */
 export class TextGeneration extends Context.Service<
   TextGeneration,
   {
@@ -16,6 +22,7 @@ export class TextGeneration extends Context.Service<
     readonly generate: (
       prompt: string,
       system?: string,
+      contents?: readonly AttachmentContent[],
     ) => Effect.Effect<string, TextGenerationUnavailable>;
   }
 >()("hero-bot/TextGeneration") {}

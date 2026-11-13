@@ -49,7 +49,7 @@ export const handleMessageCreation = (
       limitations: [
         "Reply ancestors and nearby conversation: unavailable.",
         "Moderation history and corrections: unavailable.",
-        "Attachment AI contents: unavailable; metadata only. Actionable originals are copied separately with explicit preservation status.",
+        "Attachment AI availability is recorded per input; supplied bytes do not guarantee readability. Actionable originals are copied separately with explicit preservation status.",
         "English audit translation: unavailable; original evidence retained.",
         ...(event.message_reference
           ? ["Reply reference supplied; full reply chain unavailable."]

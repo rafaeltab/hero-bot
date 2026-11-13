@@ -277,3 +277,74 @@ it.effect(
       expect(result.operation).toBe("configuration");
     }),
 );
+
+it.effect(
+  "supplies original image and PDF bytes through the installed chat adapter",
+  () =>
+    Effect.gen(function* () {
+      const bodies: unknown[] = [];
+      const result = yield* Effect.gen(function* () {
+        const ai = yield* TextGeneration;
+        return yield* ai.generate("Evidence metadata", "Policy", [
+          {
+            filename: "screen.png",
+            mediaType: "image/png",
+            data: new Uint8Array([137, 80, 78, 71]),
+          },
+          {
+            filename: "lesson.pdf",
+            mediaType: "application/pdf",
+            data: new TextEncoder().encode("%PDF-1.4"),
+          },
+        ]);
+      }).pipe(
+        Effect.provide(
+          openAITextLive({
+            fetch: async (_url, init) => {
+              bodies.push(JSON.parse(String(init?.body)));
+              return Response.json({
+                id: "r",
+                object: "chat.completion",
+                created: 0,
+                model: "controlled-model",
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: "assistant", content: "Judgment" },
+                    finish_reason: "stop",
+                  },
+                ],
+              });
+            },
+          }),
+        ),
+        Effect.provide(configuration),
+      );
+      expect(result).toBe("Judgment");
+      expect(bodies).toEqual([
+        {
+          model: "controlled-model",
+          messages: [
+            { role: "system", content: "Policy" },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Evidence metadata" },
+                {
+                  type: "image_url",
+                  image_url: { url: "data:image/png;base64,iVBORw==" },
+                },
+                {
+                  type: "file",
+                  file: {
+                    filename: "lesson.pdf",
+                    file_data: "data:application/pdf;base64,JVBERi0xLjQ=",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+    }),
+);

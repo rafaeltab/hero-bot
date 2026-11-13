@@ -36,7 +36,7 @@ export const openAITextLive = (
         );
       const model = createOpenAI({ apiKey, ...options }).chat(modelId);
       return TextGeneration.of({
-        generate: (prompt, system) =>
+        generate: (prompt, system, contents = []) =>
           Effect.scoped(
             Effect.gen(function* () {
               const controller = new AbortController();
@@ -44,7 +44,24 @@ export const openAITextLive = (
                 Effect.sync(() =>
                   generateText({
                     model,
-                    prompt,
+                    ...(contents.length === 0
+                      ? { prompt }
+                      : {
+                          messages: [
+                            {
+                              role: "user" as const,
+                              content: [
+                                { type: "text" as const, text: prompt },
+                                ...contents.map((c) => ({
+                                  type: "file" as const,
+                                  data: c.data,
+                                  mediaType: c.mediaType,
+                                  filename: c.filename,
+                                })),
+                              ],
+                            },
+                          ],
+                        }),
                     ...(system === undefined ? {} : { system }),
                     maxRetries: 0,
                     abortSignal: controller.signal,
