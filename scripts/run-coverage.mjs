@@ -3,6 +3,9 @@ import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { checkCrap } from "./check-crap.mjs";
 import { fingerprint, sealCoverage } from "./coverage-evidence.mjs";
+import { loadTestEnvironment } from "./worktree/test-environment.mjs";
+
+await loadTestEnvironment();
 
 const root = process.cwd();
 const app = resolve(root, "apps/discord-bot");

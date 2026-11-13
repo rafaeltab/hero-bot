@@ -1,9 +1,12 @@
 import { createRequire } from "node:module";
 import { defineConfig } from "vitest/config";
+import { loadTestEnvironment } from "../../scripts/worktree/test-environment.mjs";
 
 const { coverageExcludes } = createRequire(import.meta.url)(
   "./tooling/production-policy.cjs",
 );
+
+await loadTestEnvironment();
 
 export default defineConfig({
   test: {

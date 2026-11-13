@@ -6,10 +6,10 @@ process baseline. It implements no moderation workflows.
 Install Node **24.22.2** and pnpm **12.16.1**, then run:
 
 ```sh
-pnpm install --frozen-lockfile
-cp apps/discord-bot/.env.example apps/discord-bot/.env
-# Fill the ignored .env with a separate development application's bot token,
-# application ID and dedicated test-server ID (see setup link below).
+make install
+make infra-start
+pnpm check
+# Run explicitly when you need the shared development Discord identity:
 pnpm dev
 ```
 
@@ -22,7 +22,10 @@ restart manually after edits.
 
 See [Discord development setup and verification](docs/discord-development.md) for
 separate identity/server setup, controlled evidence, live smoke steps and limitations.
-Secrets belong only in environment configuration or the ignored `.env`. CI requires
+Shared development credentials belong in `$XDG_CONFIG_HOME/hero-bot/secrets.env`
+(default `~/.config/hero-bot/secrets.env`). `make install` imports existing development
+credentials from main once and refreshes the ignored app `.env`. See
+[worktree setup](docs/worktree-setup.md) for lifecycle, ownership, and verification. CI requires
 no live Discord credentials. Do not use a production bot token or invite this bot to
 the real server.
 
@@ -35,8 +38,9 @@ HERO_ENV=development pnpm start
 
 It prints `hero-bot started (development)` and releases its timer on shutdown.
 `HERO_ENV=production pnpm start` labels that same offline baseline; this does not
-connect or deploy a production bot. Both app scripts read an optional ignored `.env`,
-with existing environment values taking precedence. Keep development `.env` files
+connect or deploy a production bot. `pnpm start` reads an optional ignored `.env`, with inherited values taking
+precedence. `pnpm dev` uses generated development configuration and enforces
+exclusive ownership across this repository’s worktrees. Keep development `.env` files
 out of production artifacts. Hosting and production configuration remain undecided.
 
 Tests and coverage require the [disposable PostgreSQL setup](docs/postgres-validation.md).
