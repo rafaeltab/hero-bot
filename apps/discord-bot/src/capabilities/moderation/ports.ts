@@ -39,6 +39,13 @@ export class ConfigurationStore extends Context.Service<
   }
 >()("hero-bot/ConfigurationStore") {}
 
+export type VersionProgress = { version: string; state: string };
+export type ReportUpdate = {
+  auditChannel?: string | null;
+  delivery: Delivery | null;
+  latest: RecordEntry;
+  observedVersion: string;
+};
 export class IntakeStore extends Context.Service<
   IntakeStore,
   {
@@ -51,6 +58,16 @@ export class IntakeStore extends Context.Service<
     correctHistory?: (
       entry: HistoryEntry,
     ) => Effect.Effect<void, ModerationUnavailable>;
+    /** Serialize preservation and report updates per source across processes; never holds AI calls. */
+    serialize: <A, E, R>(
+      e: Evidence,
+      task: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | ModerationUnavailable, R>;
+    progress: (
+      e: Evidence,
+    ) => Effect.Effect<VersionProgress[], ModerationUnavailable>;
+    assessed: (e: Evidence) => Effect.Effect<void, ModerationUnavailable>;
+    delivering: (e: Evidence) => Effect.Effect<void, ModerationUnavailable>;
     claim: (
       e: Pick<Evidence, "guildId" | "messageId" | "version">,
     ) => Effect.Effect<boolean, ModerationUnavailable>;
@@ -86,6 +103,7 @@ export class Reports extends Context.Service<
         delivery: Delivery,
       ) => Effect.Effect<void, ModerationUnavailable>,
       acquisition?: AttachmentSession,
+      update?: ReportUpdate,
     ) => Effect.Effect<Delivery, ModerationUnavailable>;
     notify: (
       guildId: string,

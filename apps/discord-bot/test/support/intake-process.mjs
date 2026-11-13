@@ -10,6 +10,10 @@ const guild = process.env.DEV_MODERATION_GUILD_IDS;
 const calls = [];
 let sequence = 0;
 let aiCalls = 0;
+let delivered;
+const firstDelivery = new Promise((resolve) => {
+  delivered = resolve;
+});
 const source = (id, author, content) => ({
   guild_id: guild,
   id,
@@ -71,16 +75,15 @@ const socket = new Gateway();
 globalThis.fetch = async (_url, init) => {
   const body = JSON.parse(String(init.body));
   aiCalls++;
-  setTimeout(completeIfReady, 0);
   const input = JSON.parse(
     body.messages.find((m) => m.role === "user").content,
   );
+  if (input.messageId === "100" && input.text === "hello") await firstDelivery;
   const judgment = {
-    action: input.text.startsWith("hello") ? "none" : "ban",
+    action: input.text === "hello" ? "none" : "ban",
     reason: "Platform presumption; piracy unverified.",
-    offendingUrls: input.text.startsWith("hello")
-      ? []
-      : ["https://bilibili.com/video/1"],
+    offendingUrls:
+      input.text === "hello" ? [] : ["https://bilibili.com/video/1"],
   };
   return Response.json({
     id: "controlled",
@@ -96,27 +99,6 @@ globalThis.fetch = async (_url, init) => {
     ],
     usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
   });
-};
-let completed = false;
-const completeIfReady = () => {
-  if (completed || aiCalls !== 3) return;
-  const text = calls
-    .filter(
-      (r) => r.method === "POST" && r.url.endsWith("/channels/thread/messages"),
-    )
-    .map((r) => r.body.content)
-    .join("");
-  try {
-    JSON.parse(text);
-  } catch {
-    return;
-  }
-  completed = true;
-  writeFileSync(
-    process.env.HERO_TEST_REPORT_PATH,
-    JSON.stringify({ calls, aiCalls }),
-  );
-  console.log("intake scenario complete");
 };
 let emitted = false;
 const transport = Layer.mergeAll(
@@ -156,16 +138,26 @@ const transport = Layer.mergeAll(
             source("100", "12", "https://bilibili.com/video/1"),
           );
           socket.receive("MESSAGE_CREATE", source("101", "12", "hello"));
-          socket.receive("MESSAGE_UPDATE", {
-            guild_id: guild,
-            id: "101",
-            channel_id: "20",
-          });
           socket.receive(
             "MESSAGE_CREATE",
             source("102", "11", "exempt secret"),
           );
         }, 20);
+        setTimeout(() => {
+          socket.receive("MESSAGE_UPDATE", {
+            guild_id: guild,
+            id: "100",
+            channel_id: "20",
+            edited_timestamp: "2026-11-13T00:01:00Z",
+          });
+        }, 300);
+        setTimeout(() => {
+          writeFileSync(
+            process.env.HERO_TEST_REPORT_PATH,
+            JSON.stringify({ calls, aiCalls }),
+          );
+          console.log("intake scenario complete");
+        }, 2000);
       }
       if (request.url.endsWith(`/guilds/${guild}`)) result = { owner_id: "11" };
       if (request.url.includes("/members/"))
@@ -190,15 +182,16 @@ const transport = Layer.mergeAll(
         ];
       if (request.url.endsWith("/channels/20"))
         result = { id: "20", guild_id: guild, type: 0, parent_id: null };
-      if (request.url.endsWith("/messages/101"))
+      if (request.url.endsWith("/channels/20/messages/100"))
         result = {
-          ...source("101", "12", "hello edited"),
+          ...source("100", "12", "hello"),
           edited_timestamp: "2026-11-13T00:01:00Z",
         };
-      if (request.url.endsWith("/messages"))
+      if (request.url.endsWith("/messages") || request.method === "PATCH")
         result = request.method === "GET" ? [] : { id: "root" };
       if (request.url.endsWith("/threads")) result = { id: "thread" };
-      setTimeout(completeIfReady, 0);
+      if (request.url.endsWith("/channels/thread/messages"))
+        setTimeout(() => delivered(), 50);
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,

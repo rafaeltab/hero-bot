@@ -83,18 +83,49 @@ export const handleMessageCreation = (
       ],
     });
   });
-/** Partial updates are hydrated from Discord, never filled from an ordinary-content cache.
- * The REST snapshot's version wins when it has already advanced beyond the event. */
+/** Discord updates are partial. Hydrate only from Discord, and reject snapshots of a
+ * different version rather than attributing newer contents to an older edit. */
 export const handleMessageUpdate = (
-  event: { id: string; channel_id: string; guild_id?: string | undefined },
+  event: Partial<MessageCreation> & { id: string; channel_id: string },
   guildIds: readonly string[],
 ) =>
   Effect.gen(function* () {
-    if (!event.guild_id || !guildIds.includes(event.guild_id)) return;
+    if (
+      !event.guild_id ||
+      !guildIds.includes(event.guild_id) ||
+      !event.edited_timestamp
+    )
+      return;
+    if (
+      event.author &&
+      typeof event.content === "string" &&
+      event.timestamp &&
+      event.embeds &&
+      event.attachments
+    ) {
+      yield* handleMessageCreation(
+        {
+          ...event,
+          author: event.author,
+          content: event.content,
+          timestamp: event.timestamp,
+        },
+        guildIds,
+      );
+      return;
+    }
     const rest = yield* DiscordREST;
     const message = yield* rest.getMessage(event.channel_id, event.id);
-    if (message.id !== event.id || message.channel_id !== event.channel_id)
+    if (
+      message.id !== event.id ||
+      message.channel_id !== event.channel_id ||
+      message.edited_timestamp !== event.edited_timestamp
+    ) {
+      yield* Console.log(
+        "moderation edit snapshot unavailable for exact version; no replay or finding claimed",
+      );
       return;
+    }
     yield* handleMessageCreation(
       { ...message, guild_id: event.guild_id },
       guildIds,
@@ -103,20 +134,16 @@ export const handleMessageUpdate = (
 export const runMessageCreations = (guildIds: readonly string[]) =>
   Effect.gen(function* () {
     const gateway = yield* DiscordGateway;
-    return yield* Stream.merge(
-      gateway
-        .fromDispatch("MESSAGE_CREATE")
-        .pipe(Stream.map((e) => ({ kind: "create" as const, event: e }))),
-      gateway
-        .fromDispatch("MESSAGE_UPDATE")
-        .pipe(Stream.map((e) => ({ kind: "update" as const, event: e }))),
-    ).pipe(
+    const creations = gateway
+      .fromDispatch("MESSAGE_CREATE")
+      .pipe(Stream.map((e) => handleMessageCreation(e, guildIds)));
+    const edits = gateway
+      .fromDispatch("MESSAGE_UPDATE")
+      .pipe(Stream.map((e) => handleMessageUpdate(e, guildIds)));
+    return yield* Stream.merge(creations, edits).pipe(
       Stream.mapEffect(
-        (e) =>
-          (e.kind === "create"
-            ? handleMessageCreation(e.event, guildIds)
-            : handleMessageUpdate(e.event, guildIds)
-          ).pipe(
+        (task) =>
+          task.pipe(
             Effect.catch(() =>
               Console.log(
                 "moderation message intake unavailable; no judgment or punishment claimed",
