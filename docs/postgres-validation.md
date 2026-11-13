@@ -28,8 +28,8 @@ make infra-stop # retains database data
 # make worktree-clean # explicitly deletes this worktree's data and releases its slot
 ```
 
-Local test and coverage commands load the allocated worktree URL automatically,
-overriding inherited `HERO_TEST_DATABASE_URL`. Each worktree owns a labelled
+Test and coverage commands load the app’s `.env`; exported
+`HERO_TEST_DATABASE_URL` values take precedence. Each worktree owns a labelled
 PostgreSQL container and persistent volume. See [setup commands](../README.md).
 
 CI provisions its own health-checked PostgreSQL service, requiring no production

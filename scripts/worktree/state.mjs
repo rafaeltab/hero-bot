@@ -121,6 +121,7 @@ export async function portsAvailable(slot) {
 
 export function releaseAllocation() {
   const allocations = registry();
+  rmSync(appEnv, { force: true });
   delete allocations[gitDir];
   writePrivate(registryPath, JSON.stringify(allocations));
   rmSync(identityPath);
