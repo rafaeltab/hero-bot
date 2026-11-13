@@ -195,7 +195,12 @@ it.effect("survives PostgreSQL closing an idle pooled session", () =>
             .poll(() => sessionCounts(observer, name))
             .toEqual([{ count: 0 }]);
         });
-        expect(yield* probe.roundTrip(21)).toBe(21);
+        // Server termination can precede the client's disconnect notification.
+        yield* Effect.promise(async () => {
+          await expect
+            .poll(() => Effect.runPromise(probe.roundTrip(21)))
+            .toBe(21);
+        });
       }).pipe(
         Effect.provide(PostgresProbeLive),
         Effect.provide(
