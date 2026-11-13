@@ -8,7 +8,10 @@ import {
 
 /** Transport injection is adapter construction only; consumers see no SDK types. */
 export const openAITextLive = (
-  options: { readonly fetch?: typeof globalThis.fetch } = {},
+  options: {
+    readonly fetch?: typeof globalThis.fetch;
+    readonly modelId?: string;
+  } = {},
 ) =>
   Layer.effect(
     TextGeneration,
@@ -23,13 +26,17 @@ export const openAITextLive = (
           () => new TextGenerationUnavailable({ operation: "configuration" }),
         ),
       );
-      if (!apiKey.trim() || !modelId.trim())
+      if (
+        !apiKey.trim() ||
+        !modelId.trim() ||
+        (options.modelId !== undefined && options.modelId !== modelId)
+      )
         return yield* Effect.fail(
           new TextGenerationUnavailable({ operation: "configuration" }),
         );
       const model = createOpenAI({ apiKey, ...options }).chat(modelId);
       return TextGeneration.of({
-        generate: (prompt) =>
+        generate: (prompt, system) =>
           Effect.scoped(
             Effect.gen(function* () {
               const controller = new AbortController();
@@ -38,6 +45,7 @@ export const openAITextLive = (
                   generateText({
                     model,
                     prompt,
+                    ...(system === undefined ? {} : { system }),
                     maxRetries: 0,
                     abortSignal: controller.signal,
                   }),

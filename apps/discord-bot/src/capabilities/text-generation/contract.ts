@@ -15,6 +15,7 @@ export class TextGeneration extends Context.Service<
      */
     readonly generate: (
       prompt: string,
+      system?: string,
     ) => Effect.Effect<string, TextGenerationUnavailable>;
   }
 >()("hero-bot/TextGeneration") {}

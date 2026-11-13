@@ -7,7 +7,8 @@ type Role = { id: string; permissions: string };
 type Overwrite = { id: string; type: number; allow: string; deny: string };
 const view = 1024n;
 const administrator = 8n;
-const required = view | 2048n | 32768n | 65536n | (1n << 36n) | (1n << 38n);
+const required =
+  view | 2048n | 32768n | 65536n | (1n << 35n) | (1n << 36n) | (1n << 38n);
 const base = (
   guildId: string,
   roles: readonly Role[],

@@ -205,7 +205,7 @@ it("moderation process acquires PostgreSQL and Discord then releases both on SIG
       "select count(*)::int as count from pg_stat_activity where application_name=$1",
       [name],
     );
-    expect(active.rows).toEqual([{ count: 1 }]);
+    expect(active.rows).toEqual([{ count: 2 }]);
     child.kill("SIGTERM");
     expect(await exited).toEqual({ code: 130, signal: null });
     const closed = await observer.query(

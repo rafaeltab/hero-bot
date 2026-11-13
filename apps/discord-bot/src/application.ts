@@ -3,6 +3,9 @@ import { openAITextLive } from "./adapters/ai.ts";
 import { discordDevelopmentLayer } from "./adapters/discord-development.ts";
 import { DiscordNodeTransport } from "./adapters/discord-node.ts";
 import { EnvironmentFromConfig } from "./adapters/environment-config.ts";
+import { reportsDiscordLayer } from "./adapters/intake-discord.ts";
+import { runMessageCreations } from "./adapters/intake-events.ts";
+import { intakePostgresLayer } from "./adapters/intake-postgres.ts";
 import { guildAccessLayer } from "./adapters/moderation-discord.ts";
 import { configurationPostgresLayer } from "./adapters/moderation-postgres.ts";
 import {
@@ -16,6 +19,7 @@ import {
   type DiscordUnavailable,
 } from "./capabilities/discord-connection/contract.ts";
 import { ModerationLive } from "./capabilities/moderation/implementation.ts";
+import { IntakeLive } from "./capabilities/moderation/intake.ts";
 import {
   RuntimeStatus,
   type StatusUnavailable,
@@ -62,20 +66,35 @@ export const applicationForDevelopment = (
 ): Effect.Effect<never, StatusUnavailable | DiscordUnavailable> =>
   development ? developmentApplication : application;
 
-// Distinct opt-in configuration runtime. AI configuration is validated, never called.
+// Distinct opt-in notification runtime; creation intake and private setup share resources.
 export const moderationProgram = Effect.scoped(
   Effect.gen(function* () {
     const settings = yield* moderationSettings;
-    yield* Layer.build(openAITextLive());
+    const ai = yield* Layer.build(openAITextLive({ modelId: "gpt-6-luna" }));
+    const intakeStorage = yield* Layer.build(intakePostgresLayer());
     const storage = yield* Layer.build(configurationPostgresLayer());
     const discord = yield* Layer.build(moderationDiscordLayer(settings.token));
     const botId = yield* awaitModerationReady(
       settings.applicationId,
       settings.guildIds,
     ).pipe(Effect.provide(discord));
-    return yield* runModerationCommands(
-      settings.applicationId,
-      settings.guildIds,
+    const dependencies = Layer.mergeAll(
+      Layer.succeedContext(storage),
+      Layer.succeedContext(intakeStorage),
+      Layer.succeedContext(ai),
+      guildAccessLayer(botId).pipe(
+        Layer.provide(Layer.succeedContext(discord)),
+      ),
+      reportsDiscordLayer.pipe(Layer.provide(Layer.succeedContext(discord))),
+    );
+    return yield* Effect.all(
+      [
+        runModerationCommands(settings.applicationId, settings.guildIds),
+        runMessageCreations(settings.guildIds).pipe(
+          Effect.provide(IntakeLive.pipe(Layer.provide(dependencies))),
+        ),
+      ],
+      { concurrency: "unbounded" },
     ).pipe(
       Effect.provide(
         ModerationLive.pipe(

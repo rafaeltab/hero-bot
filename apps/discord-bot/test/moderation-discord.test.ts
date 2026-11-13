@@ -40,7 +40,7 @@ it.effect(
                 { id: "50", permissions: "66560" },
                 {
                   id: "60",
-                  permissions: "343597485056",
+                  permissions: "377957223424",
                   tags: { bot_id: "99" },
                 },
               ];
@@ -54,7 +54,7 @@ it.effect(
                   type: 0,
                   permission_overwrites: [
                     { id: "10", type: 0, deny: "1024", allow: "0" },
-                    { id: "60", type: 0, deny: "0", allow: "343597485056" },
+                    { id: "60", type: 0, deny: "0", allow: "377957223424" },
                     { id: "50", type: 0, deny: "0", allow: "1024" },
                   ],
                 },
@@ -163,7 +163,7 @@ it.effect(
             if (request.url.endsWith("/roles"))
               body = [
                 { id: "10", permissions: "0" },
-                { id: "60", permissions: "343597485056" },
+                { id: "60", permissions: "377957223424" },
               ];
             if (request.url.includes("/members/")) body = { roles: ["60"] };
             if (request.url.endsWith("/channels"))
@@ -214,7 +214,7 @@ it.effect(
                 { id: "50", permissions: "0" },
                 {
                   id: "60",
-                  permissions: "343597485056",
+                  permissions: "377957223424",
                   tags: { bot_id: "99" },
                 },
               ];
@@ -243,7 +243,7 @@ it.effect(
 it.effect.each([
   {
     name: "ordinary member grant",
-    botPermissions: "343597485056",
+    botPermissions: "377957223424",
     channel: {
       id: "20",
       guild_id: "10",
@@ -255,7 +255,7 @@ it.effect.each([
   },
   {
     name: "bot member deny",
-    botPermissions: "343597485056",
+    botPermissions: "377957223424",
     channel: {
       id: "20",
       guild_id: "10",
@@ -276,14 +276,14 @@ it.effect.each([
   },
   {
     name: "foreign channel",
-    botPermissions: "343597485056",
+    botPermissions: "377957223424",
     channel: { id: "20", guild_id: "12", type: 0, permission_overwrites: [] },
     expected: [],
     problems: [],
   },
   {
     name: "DM channel",
-    botPermissions: "343597485056",
+    botPermissions: "377957223424",
     channel: { id: "20", type: 1 },
     expected: [],
     problems: [],

@@ -1,5 +1,11 @@
 import { Context, type Effect } from "effect";
-import type { Configuration, ModerationUnavailable } from "./contract.ts";
+import type {
+  Configuration,
+  Delivery,
+  Evidence,
+  ModerationUnavailable,
+  RecordEntry,
+} from "./contract.ts";
 
 export type Access = {
   ownerId: string;
@@ -31,3 +37,36 @@ export class ConfigurationStore extends Context.Service<
     ) => Effect.Effect<number, ModerationUnavailable>;
   }
 >()("hero-bot/ConfigurationStore") {}
+
+export class IntakeStore extends Context.Service<
+  IntakeStore,
+  {
+    claim: (
+      e: Pick<Evidence, "guildId" | "messageId" | "version">,
+    ) => Effect.Effect<boolean, ModerationUnavailable>;
+    save: (record: RecordEntry) => Effect.Effect<void, ModerationUnavailable>;
+    delivered: (
+      e: Evidence,
+      delivery: Delivery,
+    ) => Effect.Effect<void, ModerationUnavailable>;
+    read: (
+      guildId: string,
+      messageId: string,
+    ) => Effect.Effect<
+      { record: RecordEntry; delivery: Delivery | null }[],
+      ModerationUnavailable
+    >;
+  }
+>()("hero-bot/IntakeStore") {}
+export class Reports extends Context.Service<
+  Reports,
+  {
+    publish: (
+      record: RecordEntry,
+    ) => Effect.Effect<Delivery, ModerationUnavailable>;
+    notify: (
+      guildId: string,
+      channelId: string | null,
+    ) => Effect.Effect<void, ModerationUnavailable>;
+  }
+>()("hero-bot/Reports") {}

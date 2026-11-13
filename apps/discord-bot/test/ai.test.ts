@@ -203,3 +203,77 @@ it.effect(
       );
     }),
 );
+
+it.effect(
+  "moderation sends the compact judgment policy as a system message through installed AI SDK/provider protocol",
+  () =>
+    Effect.gen(function* () {
+      const bodies: unknown[] = [];
+      const raw = JSON.stringify({
+        action: "ban",
+        reason: "Platform presumption.",
+        offendingUrls: ["https://bilibili.com/video/1"],
+      });
+      const result = yield* Effect.gen(function* () {
+        const ai = yield* TextGeneration;
+        return yield* ai.generate(
+          "Original supplied evidence",
+          "Editable server policy",
+        );
+      }).pipe(
+        Effect.provide(
+          openAITextLive({
+            modelId: "gpt-6-luna",
+            fetch: async (_url, init) => {
+              bodies.push(JSON.parse(String(init?.body)));
+              return Response.json({
+                id: "r",
+                object: "chat.completion",
+                created: 0,
+                model: "gpt-6-luna",
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: "assistant", content: raw },
+                    finish_reason: "stop",
+                  },
+                ],
+              });
+            },
+          }),
+        ),
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromUnknown({
+              ...settings,
+              HERO_AI_MODEL: "gpt-6-luna",
+            }),
+          ),
+        ),
+      );
+      expect(result).toBe(raw);
+      expect(bodies).toEqual([
+        {
+          model: "gpt-6-luna",
+          messages: [
+            { role: "developer", content: "Editable server policy" },
+            { role: "user", content: "Original supplied evidence" },
+          ],
+        },
+      ]);
+    }),
+);
+it.effect(
+  "moderation rejects a different configured model rather than storing false model provenance",
+  () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.gen(function* () {
+        return yield* TextGeneration;
+      }).pipe(
+        Effect.provide(openAITextLive({ modelId: "gpt-6-luna" })),
+        Effect.provide(configuration),
+        Effect.flip,
+      );
+      expect(result.operation).toBe("configuration");
+    }),
+);

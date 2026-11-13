@@ -40,3 +40,51 @@ export class Moderation extends Context.Service<
     execute: (request: Request) => Effect.Effect<string, ModerationUnavailable>;
   }
 >()("hero-bot/Moderation") {}
+
+export type Judgment = {
+  action: "none" | "delete" | "review-hold" | "ban";
+  reason: string;
+  offendingUrls: string[];
+};
+/** Complete original gateway evidence; embeds and attributed quotes remain unmodified.
+ * No linked destinations or attachment contents are retrieved by this slice. */
+export type Evidence = {
+  guildId: string;
+  messageId: string;
+  version: string;
+  authorId: string;
+  channelId: string;
+  parentId: string | null;
+  currentRoles?: string[];
+  channelContext?: { type: number; name: string | null };
+  replyReference?: unknown;
+  text: string;
+  embeds: unknown[];
+  quotes: unknown[];
+  attachments: unknown[];
+  roles: string[];
+  restriction: string;
+  limitations: string[];
+};
+export type RecordEntry = {
+  evidence: Evidence;
+  configuration: Configuration;
+  judgment: Judgment;
+  model: string;
+  provider: string;
+  assessedAt: string;
+  observedRoles?: string[];
+  systemPrompt?: string;
+};
+export type Delivery = { rootId: string; threadId: string };
+/** Creation-only notification workflow. Claims are content-free and durable: failed or
+ * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
+ * Later edit/context/attachment/retry capabilities are explicitly unavailable. */
+export class Intake extends Context.Service<
+  Intake,
+  {
+    receive: (
+      evidence: Evidence,
+    ) => Effect.Effect<"exempt" | "duplicate" | "none" | "reported" | "failed">;
+  }
+>()("hero-bot/Intake") {}

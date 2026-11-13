@@ -1,3 +1,5 @@
+> Message creation intake is now delivered by #30. See [text intake and QA](moderation-intake.md) for current behavior, additional thread permissions, and remaining unavailable capabilities. Setup-only statements below describe the #29 checkpoint.
+
 # Notification-only server configuration (#29)
 
 This executable delivers setup only. It receives guild slash commands, not ordinary

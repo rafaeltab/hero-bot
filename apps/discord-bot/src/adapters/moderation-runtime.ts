@@ -56,7 +56,9 @@ export const moderationSettings = Effect.gen(function* () {
 
 export const moderationDiscordLayer = (token: Redacted.Redacted<string>) =>
   DiscordLive.pipe(
-    Layer.provide(DiscordConfig.layer({ token, gateway: { intents: 1 } })),
+    Layer.provide(
+      DiscordConfig.layer({ token, gateway: { intents: 1 | 512 | 32768 } }),
+    ),
   );
 export const awaitModerationReady = (
   applicationId: string,
@@ -97,7 +99,7 @@ export const runModerationCommands = (
         ),
       );
     yield* Console.log(
-      "notification-only configuration ready; judgment unavailable",
+      "notification-only configuration ready; creation judgment available; edits/context/attachments unavailable",
     );
     return yield* Stream.mapEffect(
       Stream.fromQueue(events),

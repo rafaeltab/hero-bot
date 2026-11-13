@@ -6,6 +6,7 @@ import {
   type PermissionGroup,
   type Request,
 } from "./contract.ts";
+import { initialPolicy } from "./policy.ts";
 import { type Access, ConfigurationStore, GuildAccess } from "./ports.ts";
 
 // Permissions are independent of fixed initial groups. No group/permission editor
@@ -26,7 +27,7 @@ const empty = (guildId: string): Configuration => {
     roles: { Owner: [], Admin: [], Moderator: [] },
     auditChannel: null,
     reportingChannel: null,
-    prompt: "",
+    prompt: initialPolicy,
   };
 };
 const channelProblem = (id: string | null, access: Access): string[] => {
@@ -36,7 +37,7 @@ const channelProblem = (id: string | null, access: Access): string[] => {
     return ["Reporting channel is unsafe: deny ordinary members View Channel."];
   if (!channel.usable)
     return [
-      "Grant bot View Channel, Read Message History, Send Messages, Attach Files, Create Private Threads and Send Messages in Threads; remove Administrator. Grant each mapped permission role View Channel and Read Message History.",
+      "Grant bot View Channel, Read Message History, Send Messages, Attach Files, Create Public/Private Threads and Send Messages in Threads; remove Administrator. Grant each mapped permission role View Channel and Read Message History.",
     ];
   return [];
 };
@@ -130,7 +131,7 @@ export const ModerationLive = Layer.effect(
             ].includes(request.command.channelId);
             return [
               `Channel ${request.command.channelId}: ${channel ? "available" : "missing or cross-server"}; configured ${config.version > 0}; configured exempt route ${exempt}.`,
-              "Monitoring, thread inheritance, message judgment, evidence delivery, AI budgets and confidential intake: unavailable until later slices.",
+              "Creation monitoring and private text evidence reporting: available when configured. Edits, conversation/history/attachment contents, AI budgets and confidential intake: unavailable until later slices.",
               disabled,
               ...problems(config, access),
             ].join("\n");
