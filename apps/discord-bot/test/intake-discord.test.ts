@@ -25,7 +25,11 @@ it.effect(
         provider: "openai/chat",
         assessedAt: "today",
       });
-      expect(result).toEqual({ rootId: "root", threadId: "thread" });
+      expect(result).toEqual({
+        rootId: "root",
+        threadId: "thread",
+        state: "complete",
+      });
       expect(requests.map((r) => r.method)).toEqual(["POST", "POST", "POST"]);
       expect(requests[0]).toMatchObject({
         url: expect.stringContaining("/channels/30/messages"),
@@ -113,6 +117,9 @@ it.effect(
       ),
       Effect.provide(
         Layer.succeed(Intake, {
+          status: () => Effect.die("unused"),
+          reportFailure: () => Effect.void,
+          recover: () => Effect.void,
           receive: (e) =>
             Effect.sync(() => {
               supplied.push(e);

@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { ConfigProvider, Deferred, Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { openAITextLive } from "../src/adapters/ai.ts";
 import {
   TextGeneration,
@@ -69,7 +70,7 @@ it.effect(
     }),
 );
 
-it.effect.each(["provider", "transport", "invalid-response"])(
+it.live.each(["provider", "transport", "invalid-response"])(
   "translates failed SDK calls without leaking provider diagnostics",
   (failure) =>
     Effect.gen(function* () {
@@ -105,8 +106,8 @@ it.effect.each(["provider", "transport", "invalid-response"])(
       expect(error).toEqual(
         new TextGenerationUnavailable({ operation: "generate" }),
       );
-      expect(calls).toBe(1);
-      expect(released).toEqual(["request released"]);
+      expect(calls).toBe(failure === "provider" ? 3 : 1);
+      expect(released).toHaveLength(calls);
       expect(JSON.stringify(error)).not.toContain("private");
     }),
 );
@@ -154,7 +155,12 @@ it.effect(
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
       const events: string[] = [];
+      const outcomes: string[] = [];
       const live = openAITextLive({
+        afterAttempt: (event) =>
+          Effect.sync(() => {
+            outcomes.push(event.outcome);
+          }),
         fetch: async (_url, init) => {
           return new Promise<Response>((_resolve, reject) => {
             init?.signal?.addEventListener(
@@ -183,6 +189,7 @@ it.effect(
       yield* Deferred.await(started);
       yield* Fiber.interrupt(fiber);
       expect(events).toEqual(["aborted", "released"]);
+      expect(outcomes).toEqual(["interrupted"]);
     }),
 );
 
@@ -275,5 +282,126 @@ it.effect(
         Effect.flip,
       );
       expect(result.operation).toBe("configuration");
+    }),
+);
+
+it.live(
+  "429 respects provider delay and stops after three transport attempts",
+  () =>
+    Effect.gen(function* () {
+      const times: number[] = [];
+      const result = yield* Effect.gen(function* () {
+        const ai = yield* TextGeneration;
+        return yield* Effect.flip(
+          ai.generate("private", "policy", {
+            guildId: "10",
+            purpose: "translation",
+          }),
+        );
+      }).pipe(
+        Effect.provide(
+          openAITextLive({
+            fetch: async () => {
+              times.push(performance.now());
+              return Response.json(
+                { error: { message: "secret", type: "rate_limit_error" } },
+                { status: 429, headers: { "retry-after": "0.03" } },
+              );
+            },
+          }),
+        ),
+        Effect.provide(configuration),
+      );
+      expect(result.operation).toBe("generate");
+      expect(times).toHaveLength(3);
+      expect(Number(times[1]) - Number(times[0])).toBeGreaterThanOrEqual(25);
+      expect(Number(times[2]) - Number(times[1])).toBeGreaterThanOrEqual(25);
+    }),
+);
+
+it.live.each([
+  { "retry-after-ms": "5" },
+  { "retry-after-ms": "bad", "retry-after": "0.005" },
+  { "retry-after": new Date(0).toUTCString() },
+  { "retry-after": "bad" },
+])("retry header formats use the same bounded accounting path: %j", (headers) =>
+  Effect.gen(function* () {
+    const events: unknown[] = [];
+    let calls = 0;
+    const result = yield* Effect.gen(function* () {
+      const ai = yield* TextGeneration;
+      return yield* Effect.flip(
+        ai.generate("private", "private policy", {
+          guildId: "10",
+          purpose: "translation",
+        }),
+      );
+    }).pipe(
+      Effect.provide(
+        openAITextLive({
+          beforeAttempt: (event) =>
+            Effect.sync(() => {
+              events.push(event);
+            }),
+          afterAttempt: (event) =>
+            Effect.sync(() => {
+              events.push(event);
+            }),
+          fetch: async () => {
+            calls++;
+            return Response.json(
+              { error: { message: "secret", type: "rate_limit_error" } },
+              { status: 429, headers },
+            );
+          },
+        }),
+      ),
+      Effect.provide(configuration),
+    );
+    expect(result.operation).toBe("generate");
+    expect(calls).toBe(3);
+    expect(events).toEqual([
+      { guildId: "10", purpose: "translation", attempt: 1 },
+      { guildId: "10", purpose: "translation", attempt: 1, outcome: "failed" },
+      { guildId: "10", purpose: "translation", attempt: 2 },
+      { guildId: "10", purpose: "translation", attempt: 2, outcome: "failed" },
+      { guildId: "10", purpose: "translation", attempt: 3 },
+      { guildId: "10", purpose: "translation", attempt: 3, outcome: "failed" },
+    ]);
+  }),
+);
+
+it.effect(
+  "long 429 delay is not shortened and interruption cancels backoff without another paid call",
+  () =>
+    Effect.gen(function* () {
+      let calls = 0;
+      const failed = yield* Deferred.make<void>();
+      const fiber = yield* Effect.gen(function* () {
+        const ai = yield* TextGeneration;
+        return yield* ai.generate("ordinary content");
+      }).pipe(
+        Effect.provide(
+          openAITextLive({
+            afterAttempt: () =>
+              Deferred.succeed(failed, undefined).pipe(Effect.asVoid),
+            fetch: async () => {
+              calls++;
+              return Response.json(
+                { error: { message: "private", type: "rate_limit_error" } },
+                { status: 429, headers: { "retry-after-ms": "70000" } },
+              );
+            },
+          }),
+        ),
+        Effect.provide(configuration),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(failed);
+      yield* TestClock.adjust("69 seconds");
+      expect(calls).toBe(1);
+      yield* Fiber.interrupt(fiber);
+      yield* TestClock.adjust("1 day");
+      expect(calls).toBe(1);
     }),
 );

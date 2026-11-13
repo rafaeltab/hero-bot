@@ -1,7 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText } from "ai";
+import { APICallError, generateText } from "ai";
 import { Config, Effect, Layer } from "effect";
 import {
+  type InvocationAttempt,
+  type InvocationContext,
   TextGeneration,
   TextGenerationUnavailable,
 } from "../capabilities/text-generation/contract.ts";
@@ -11,6 +13,18 @@ export const openAITextLive = (
   options: {
     readonly fetch?: typeof globalThis.fetch;
     readonly modelId?: string;
+    /** Runs before each paid transport attempt; future budget reservation belongs here. */
+    readonly beforeAttempt?: (
+      event: InvocationAttempt,
+    ) => Effect.Effect<void, TextGenerationUnavailable>;
+    /** Sanitized accounting observation, including retries and failed requests. */
+    readonly afterAttempt?: (
+      event: InvocationAttempt & {
+        outcome: "succeeded" | "failed" | "interrupted";
+        inputTokens?: number | undefined;
+        outputTokens?: number | undefined;
+      },
+    ) => Effect.Effect<void>;
   } = {},
 ) =>
   Layer.effect(
@@ -35,39 +49,106 @@ export const openAITextLive = (
           new TextGenerationUnavailable({ operation: "configuration" }),
         );
       const model = createOpenAI({ apiKey, ...options }).chat(modelId);
+      const attempt = (
+        prompt: string,
+        system: string | undefined,
+        context: InvocationContext | undefined,
+        number: number,
+      ) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const event = { ...context, attempt: number };
+            yield* options.beforeAttempt?.(event) ?? Effect.void;
+            const controller = new AbortController();
+            const request = yield* Effect.acquireRelease(
+              Effect.sync(() =>
+                generateText({
+                  model,
+                  prompt,
+                  ...(system === undefined ? {} : { system }),
+                  maxRetries: 0,
+                  abortSignal: controller.signal,
+                }),
+              ),
+              (request) =>
+                Effect.promise(async () => {
+                  controller.abort();
+                  // Await SDK/transport settlement on every exit, including interruption.
+                  await request.then(
+                    () => undefined,
+                    () => undefined,
+                  );
+                }),
+            );
+            const result = yield* Effect.tryPromise({
+              try: () => request,
+              catch: (error) => error,
+            }).pipe(
+              Effect.tapError(
+                () =>
+                  options.afterAttempt?.({ ...event, outcome: "failed" }) ??
+                  Effect.void,
+              ),
+              Effect.onInterrupt(
+                () =>
+                  options.afterAttempt?.({
+                    ...event,
+                    outcome: "interrupted",
+                  }) ?? Effect.void,
+              ),
+            );
+            yield* options.afterAttempt?.({
+              ...event,
+              outcome: "succeeded",
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+            }) ?? Effect.void;
+            return result.text;
+          }),
+        );
       return TextGeneration.of({
-        generate: (prompt, system) =>
-          Effect.scoped(
-            Effect.gen(function* () {
-              const controller = new AbortController();
-              const request = yield* Effect.acquireRelease(
-                Effect.sync(() =>
-                  generateText({
-                    model,
-                    prompt,
-                    ...(system === undefined ? {} : { system }),
-                    maxRetries: 0,
-                    abortSignal: controller.signal,
-                  }),
-                ),
-                (request) =>
-                  Effect.promise(async () => {
-                    controller.abort();
-                    // Await SDK/transport settlement on every exit, including interruption.
-                    await request.then(
-                      () => undefined,
-                      () => undefined,
+        generate: (prompt, system, context) => {
+          const run = (
+            number: number,
+          ): Effect.Effect<string, TextGenerationUnavailable> =>
+            attempt(prompt, system, context, number).pipe(
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  if (
+                    number >= 3 ||
+                    !APICallError.isInstance(error) ||
+                    !error.isRetryable
+                  )
+                    return yield* Effect.fail(
+                      new TextGenerationUnavailable({ operation: "generate" }),
                     );
-                  }),
-              );
-              const result = yield* Effect.tryPromise({
-                try: () => request,
-                catch: () =>
-                  new TextGenerationUnavailable({ operation: "generate" }),
-              });
-              return result.text;
-            }),
-          ),
+                  yield* Effect.sleep(retryDelay(error, number));
+                  return yield* run(number + 1);
+                }),
+              ),
+            );
+          return run(1);
+        },
       });
     }),
   );
+
+/** Never shorten a provider delay, including delays above the SDK's 60s limit. */
+const retryDelay = (error: APICallError, attempt: number): number => {
+  const headers = error.responseHeaders ?? {};
+  const milliseconds = Number(headers["retry-after-ms"]);
+  if (
+    headers["retry-after-ms"] &&
+    Number.isFinite(milliseconds) &&
+    milliseconds >= 0
+  )
+    return milliseconds;
+  const value = headers["retry-after"];
+  if (value) {
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const date = Date.parse(value);
+    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+  }
+  return 250 * 2 ** (attempt - 1);
+};

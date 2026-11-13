@@ -120,7 +120,7 @@ it("executable moderation path judges actionable/harmless creations, exempts own
               configuration: { guildId },
               model: "gpt-6-luna",
             },
-            delivery: { rootId: "root", threadId: "thread" },
+            delivery: { rootId: "root", threadId: "thread", state: "complete" },
           },
         ]);
         expect(yield* s.read(guildId, "101")).toEqual([]);
