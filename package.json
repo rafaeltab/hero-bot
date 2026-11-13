@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "dev": "node scripts/worktree/cli.mjs dev",
+    "dev": "make --no-print-directory dev",
     "start": "pnpm --filter @hero-bot/discord-bot start",
     "lint": "biome check . && pnpm lint:tests",
     "format": "biome check --write .",

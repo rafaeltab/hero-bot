@@ -1,6 +1,13 @@
 import { createConnection } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { common, databasePort, docker, owned, resourceName } from "./state.mjs";
+import {
+  common,
+  databasePort,
+  docker,
+  owned,
+  releaseAllocation,
+  resourceName,
+} from "./state.mjs";
 
 export function stopInfra(value, removeVolume = false) {
   docker("info", "--format", "{{.ServerVersion}}");
@@ -89,7 +96,17 @@ export async function startInfra(value) {
   }
   for (let attempt = 0; attempt < 60; attempt++) {
     try {
-      docker("exec", name, "pg_isready", "-U", "hero_test", "-d", "hero_test");
+      docker(
+        "exec",
+        name,
+        "pg_isready",
+        "-h",
+        "127.0.0.1",
+        "-U",
+        "hero_test",
+        "-d",
+        "hero_test",
+      );
       if (!(await hostReady(databasePort(value))))
         throw Error("Host port is not reachable.");
       console.log(`PostgreSQL ready on port ${databasePort(value)} (${name}).`);
@@ -99,4 +116,9 @@ export async function startInfra(value) {
     }
   }
   throw Error(`PostgreSQL readiness timed out for ${name}.`);
+}
+
+export function cleanWorktree(value) {
+  stopInfra(value, true);
+  releaseAllocation();
 }

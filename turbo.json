@@ -20,12 +20,7 @@
     "test": {
       "env": ["HERO_TEST_DATABASE_URL"],
       "dependsOn": ["build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env",
-        "$TURBO_ROOT$/scripts/worktree/**",
-        "$TURBO_ROOT$/.env.worktree.json"
-      ]
+      "inputs": ["$TURBO_DEFAULT$", ".env"]
     },
     "coverage": {
       "env": ["HERO_TEST_DATABASE_URL"],

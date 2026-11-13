@@ -1,12 +1,20 @@
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { parseEnv } from "node:util";
 import { defineConfig } from "vitest/config";
-import { loadTestEnvironment } from "../../scripts/worktree/test-environment.mjs";
 
 const { coverageExcludes } = createRequire(import.meta.url)(
   "./tooling/production-policy.cjs",
 );
 
-await loadTestEnvironment();
+const environmentFile = new URL(".env", import.meta.url);
+if (!process.env.CI && existsSync(environmentFile)) {
+  const { HERO_TEST_DATABASE_URL } = parseEnv(
+    readFileSync(environmentFile, "utf8"),
+  );
+  if (HERO_TEST_DATABASE_URL !== undefined)
+    process.env.HERO_TEST_DATABASE_URL = HERO_TEST_DATABASE_URL;
+}
 
 export default defineConfig({
   test: {

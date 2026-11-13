@@ -7,6 +7,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
@@ -117,4 +118,11 @@ export async function portsAvailable(slot) {
     if (!free) return false;
   }
   return true;
+}
+
+export function releaseAllocation() {
+  const allocations = registry();
+  delete allocations[gitDir];
+  writePrivate(registryPath, JSON.stringify(allocations));
+  rmSync(identityPath);
 }

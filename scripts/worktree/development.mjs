@@ -6,6 +6,7 @@ import { parseEnv } from "node:util";
 import {
   appEnv,
   databaseUrl,
+  identity,
   processPath,
   processStamp,
   readJson,
@@ -80,3 +81,5 @@ export async function stopDevelopment(value) {
     "Development process did not stop gracefully; infrastructure and allocation retained.",
   );
 }
+
+if (import.meta.main) process.exitCode = await runDevelopment(identity());
