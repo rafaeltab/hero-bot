@@ -49,8 +49,8 @@ HERO_ENV=development pnpm start
 It prints `hero-bot started (development)` and releases its timer on shutdown.
 `HERO_ENV=production pnpm start` labels that same offline baseline; this does not
 connect or deploy a production bot. `pnpm start` reads an optional ignored `.env`, with inherited values taking
-precedence. `pnpm dev` uses generated development configuration and enforces
-exclusive ownership across this repository’s worktrees. Keep development `.env` files
+precedence. `pnpm dev` uses generated development configuration; multiple worktrees
+can connect the shared bot concurrently. Keep development `.env` files
 out of production artifacts. Hosting and production configuration remain undecided.
 
 Tests and coverage require the [disposable PostgreSQL setup](docs/postgres-validation.md).

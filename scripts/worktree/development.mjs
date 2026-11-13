@@ -15,7 +15,7 @@ import {
 
 export async function runDevelopment(value) {
   const path = processPath(value);
-  // Runs only after flock grants process-lifetime ownership of the shared identity.
+  // The per-worktree lifetime lock protects this process record during shutdown.
   const environment = parseEnv(readFileSync(appEnv, "utf8"));
   const child = spawn(
     process.execPath,

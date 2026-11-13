@@ -42,7 +42,7 @@ async function lockRun(lock, args, nonblocking = false) {
     });
     if (code === 73)
       console.error(
-        "Another worktree owns the development Discord bot. Stop it before launching here.",
+        "This worktree already has a managed development process or is stopping.",
       );
     return code;
   } finally {
@@ -52,13 +52,6 @@ async function lockRun(lock, args, nonblocking = false) {
 }
 try {
   if (command === "dev") {
-    identity();
-    process.exitCode = await lockRun(
-      join(stateDir, "discord.lock"),
-      ["dev-guard"],
-      true,
-    );
-  } else if (command === "dev-guard") {
     const value = identity();
     process.exitCode = await lockRun(
       join(stateDir, `${value.id}.lifetime.lock`),
