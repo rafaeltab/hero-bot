@@ -1,12 +1,10 @@
 import { createRequire } from "node:module";
-import { config } from "dotenv";
+import "dotenv/config";
 import { defineConfig } from "vitest/config";
 
 const { coverageExcludes } = createRequire(import.meta.url)(
   "./tooling/production-policy.cjs",
 );
-
-config({ override: true, quiet: true });
 
 export default defineConfig({
   test: {

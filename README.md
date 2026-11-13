@@ -36,8 +36,8 @@ Installation starts no services. Dependency failures fail installation, but
 configuration failures only warn; resolve those diagnostics before running services.
 `make infra-stop` removes this worktree’s PostgreSQL container while retaining data.
 Ports remain stable on reinstall; resolve later port conflicts before retrying start.
-Local tests override inherited database URLs with the worktree allocation; CI keeps
-its supplied URL. Cleanup preserves the checkout and shared secrets.
+Tests load the app’s `.env`; exported variables take precedence. CI skips `.env`
+generation and uses its supplied URL. Cleanup preserves the checkout and shared secrets.
 
 The existing offline process baseline remains available independently:
 
