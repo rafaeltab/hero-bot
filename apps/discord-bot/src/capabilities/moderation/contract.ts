@@ -47,7 +47,7 @@ export type Judgment = {
   offendingUrls: string[];
 };
 /** Complete original gateway evidence; embeds and attributed quotes remain unmodified.
- * No linked destinations or attachment contents are retrieved by this slice. */
+ * Linked destinations are never retrieved; original attachments may be privately copied. */
 export type Evidence = {
   guildId: string;
   messageId: string;
@@ -76,10 +76,38 @@ export type RecordEntry = {
   observedRoles?: string[];
   systemPrompt?: string;
 };
-export type Delivery = { rootId: string; threadId: string };
+export type AttachmentCopy = {
+  sourceAttachmentId: string | null;
+  sourceMessageId: string;
+  sourceVersion: string;
+  metadata: unknown;
+  status:
+    | "pending"
+    | "available"
+    | "unavailable"
+    | "oversized"
+    | "upload-unknown"
+    | "missing";
+  copy?: {
+    channelId: string;
+    messageId: string;
+    attachmentId: string;
+    filename: string;
+    url: string;
+    size: number;
+  };
+  checkedAt?: string;
+};
+export type Delivery = {
+  rootId: string;
+  threadId: string;
+  /** Missing state on older records is unknown, never proof of completeness. */
+  state?: "partial" | "complete";
+  attachments?: AttachmentCopy[];
+};
 /** Creation-only notification workflow. Claims are content-free and durable: failed or
  * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
- * Later edit/context/attachment/retry capabilities are explicitly unavailable. */
+ * Actionable attachments are copied privately; AI attachment contents and retry/recovery remain unavailable. */
 export class Intake extends Context.Service<
   Intake,
   {

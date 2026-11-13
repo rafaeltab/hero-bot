@@ -48,7 +48,7 @@ export const handleMessageCreation = (
       limitations: [
         "Reply ancestors and nearby conversation: unavailable.",
         "Moderation history and corrections: unavailable.",
-        "Attachment contents and copying: unavailable; metadata only.",
+        "Attachment AI contents: unavailable; metadata only. Actionable originals are copied separately with explicit preservation status.",
         "English audit translation: unavailable; original evidence retained.",
         "Message edits: unavailable; creation-only workflow.",
         ...(event.message_reference
