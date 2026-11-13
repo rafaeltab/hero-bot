@@ -243,7 +243,7 @@ it.effect(
     const requests: { method: string; url: string; body: unknown }[] = [];
     const record = {
       evidence,
-      configuration,
+      configuration: { ...configuration, auditChannel: "moved" },
       judgment: {
         action: "ban" as const,
         reason: "Presumption.",
@@ -254,21 +254,30 @@ it.effect(
       assessedAt: "today",
     };
     return Effect.gen(function* () {
-      const result = yield* (yield* Reports).publish(record, {
-        delivery: { rootId: "original", threadId: "thread" },
-        latest: {
-          ...record,
-          evidence: {
-            ...evidence,
-            version: "2026-11-13T00:01:00Z",
-            text: "allowed",
+      const result = yield* (yield* Reports).publish(
+        record,
+        undefined,
+        undefined,
+        {
+          delivery: { rootId: "original", threadId: "thread" },
+          latest: {
+            ...record,
+            evidence: {
+              ...evidence,
+              version: "2026-11-13T00:01:00Z",
+              text: "allowed",
+            },
+            judgment: { action: "none", reason: "Allowed.", offendingUrls: [] },
           },
-          judgment: { action: "none", reason: "Allowed.", offendingUrls: [] },
+          observedVersion: "2026-11-13T00:02:00Z",
+          auditChannel: "30",
         },
-        observedVersion: "2026-11-13T00:02:00Z",
-        auditChannel: "30",
+      );
+      expect(result).toEqual({
+        rootId: "original",
+        threadId: "thread",
+        channelId: "30",
       });
-      expect(result).toEqual({ rootId: "original", threadId: "thread" });
       expect(requests.map((r) => r.method)).toEqual(["PATCH", "POST"]);
       expect(requests[0]).toMatchObject({
         url: expect.stringContaining("/channels/30/messages/original"),

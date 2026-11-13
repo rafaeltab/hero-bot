@@ -120,6 +120,7 @@ const scenario = (
             ),
         }),
         Layer.succeed(Reports, {
+          refresh: (d) => Effect.succeed(d),
           publish: (r) =>
             options.fault === "publish"
               ? fail()

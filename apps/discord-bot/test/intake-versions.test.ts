@@ -63,7 +63,8 @@ const fixture = () => {
       },
     }),
     Layer.succeed(Reports, {
-      publish: (record, update) =>
+      refresh: (d) => Effect.succeed(d),
+      publish: (record, _checkpoint, _acquisition, update) =>
         Effect.gen(function* () {
           if (!update?.delivery) roots++;
           reports.push({ record, update });

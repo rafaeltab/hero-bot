@@ -90,7 +90,10 @@ export const IntakeLive = Layer.effect(
               const latest = history.at(-1)?.record ?? record;
               const original = history.find((h) => h.delivery !== null);
               const delivery = original?.delivery ?? null;
-              channel = original?.record.configuration.auditChannel ?? channel;
+              channel =
+                original?.delivery?.channelId ??
+                original?.record.configuration.auditChannel ??
+                channel;
               const fresh = yield* access.inspect(
                 e.guildId,
                 e.authorId,
@@ -108,13 +111,22 @@ export const IntakeLive = Layer.effect(
                 );
               }
               yield* store.delivering(e);
-              const published = yield* reports.publish(record, {
-                delivery,
-                auditChannel: channel,
-                latest,
-                observedVersion: progress.at(-1)?.version ?? e.version,
-              });
+              const published = yield* reports.publish(
+                record,
+                (progress) => store.delivered(e, progress),
+                undefined,
+                {
+                  delivery,
+                  auditChannel: channel,
+                  latest,
+                  observedVersion: progress.at(-1)?.version ?? e.version,
+                },
+              );
               yield* store.delivered(e, published);
+              if (published.state === "partial")
+                return yield* Effect.fail(
+                  new ModerationUnavailable({ reason: "discord" }),
+                );
               return "reported" as const;
             }),
           );
