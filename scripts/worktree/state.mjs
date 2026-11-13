@@ -60,13 +60,12 @@ const portsPerSlot = 10;
 export const databasePort = (value) => basePort + value.slot * portsPerSlot;
 export const databaseUrl = (value) =>
   `postgresql://hero_test:hero_test@127.0.0.1:${databasePort(value)}/hero_test`;
-export const processPath = (value) =>
-  join(stateDir, `${value.id}.process.json`);
 export function processStamp(pid) {
   try {
-    return readFileSync(`/proc/${pid}/stat`, "utf8")
+    const fields = readFileSync(`/proc/${pid}/stat`, "utf8")
       .split(") ")[1]
-      .split(" ")[19];
+      .split(" ");
+    return fields[0] === "Z" ? undefined : fields[19];
   } catch {
     return undefined;
   }

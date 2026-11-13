@@ -1,5 +1,6 @@
 import { createConnection } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
+import { stopDevelopment } from "./development.mjs";
 import {
   common,
   databasePort,
@@ -118,7 +119,8 @@ export async function startInfra(value) {
   throw Error(`PostgreSQL readiness timed out for ${name}.`);
 }
 
-export function cleanWorktree(value) {
-  stopInfra(value, true);
-  releaseAllocation();
+export async function stopWorktree(value, removeVolume = false) {
+  await stopDevelopment();
+  stopInfra(value, removeVolume);
+  if (removeVolume) releaseAllocation();
 }

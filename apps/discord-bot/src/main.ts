@@ -1,6 +1,8 @@
 import { NodeRuntime } from "@effect/platform-node";
+import { registerDevelopmentProcess } from "./adapters/development-process.ts";
 import { applicationForDevelopment } from "./application.ts";
 
-NodeRuntime.runMain(
-  applicationForDevelopment(process.argv.includes("--discord-development")),
-);
+const development = process.argv.includes("--discord-development");
+if (development) registerDevelopmentProcess();
+
+NodeRuntime.runMain(applicationForDevelopment(development));
