@@ -53,7 +53,7 @@ const input = JSON.stringify({
 const result = await Effect.runPromise(
   Effect.gen(function* () {
     const ai = yield* TextGeneration;
-    return yield* ai.generate(input, system, contents).pipe(
+    return yield* ai.generate(input, system, undefined, contents).pipe(
       Effect.map((raw) => {
         try {
           return { actual: parseJudgment(raw) };

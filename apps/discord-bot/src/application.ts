@@ -90,12 +90,11 @@ export const moderationProgram = Effect.scoped(
     return yield* Effect.all(
       [
         runModerationCommands(settings.applicationId, settings.guildIds),
-        runMessageCreations(settings.guildIds).pipe(
-          Effect.provide(IntakeLive.pipe(Layer.provide(dependencies))),
-        ),
+        runMessageCreations(settings.guildIds),
       ],
       { concurrency: "unbounded" },
     ).pipe(
+      Effect.provide(IntakeLive.pipe(Layer.provide(dependencies))),
       Effect.provide(
         ModerationLive.pipe(
           Layer.provide(

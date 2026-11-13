@@ -5,6 +5,7 @@ import type {
   Evidence,
   ModerationUnavailable,
   RecordEntry,
+  ServiceHealth,
 } from "./contract.ts";
 
 export type Access = {
@@ -101,6 +102,7 @@ export class Reports extends Context.Service<
     notify: (
       guildId: string,
       channelId: string | null,
+      health?: ServiceHealth,
     ) => Effect.Effect<void, ModerationUnavailable>;
   }
 >()("hero-bot/Reports") {}

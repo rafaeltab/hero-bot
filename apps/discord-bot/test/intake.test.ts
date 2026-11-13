@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import {
   Intake,
   ModerationUnavailable,
@@ -29,6 +29,7 @@ const scenario = (
   ) => Effect.Effect<void, unknown>,
   options: {
     raw?: string;
+    generate?: typeof TextGeneration.Service.generate;
     actorRoles?: string[];
     fault?: string;
     configured?: boolean;
@@ -140,13 +141,35 @@ const scenario = (
                   },
                 }),
               }),
+
           refresh: (d) => Effect.succeed(d),
           publish: (r) =>
             options.fault === "publish"
               ? fail()
               : Effect.sync(() => {
                   reports.push(r);
-                  return { rootId: "root", threadId: "thread" };
+                  return options.fault === "partial"
+                    ? {
+                        rootId: "root",
+                        threadId: "thread",
+                        state: "partial" as const,
+                        attachments: [
+                          {
+                            sourceAttachmentId: "a",
+                            sourceMessageId: "100",
+                            sourceVersion: evidence.version,
+                            metadata: {},
+                            status: "upload-unknown" as const,
+                          },
+                        ],
+                      }
+                    : options.fault === "unknown"
+                      ? { rootId: "root", threadId: "thread" }
+                      : {
+                          rootId: "root",
+                          threadId: "thread",
+                          state: "complete" as const,
+                        };
                 }),
           notify: () =>
             Effect.sync(() => {
@@ -156,25 +179,27 @@ const scenario = (
             ),
         }),
         Layer.succeed(TextGeneration, {
-          generate: (p, _system, contents) =>
-            options.fault === "ai"
-              ? Effect.fail(
-                  new TextGenerationUnavailable({ operation: "generate" }),
-                )
-              : Effect.sync(() => {
-                  inputs.push(p);
-                  options.suppliedContents?.push(...(contents ?? []));
-                  return (
-                    (p.includes("authorized")
-                      ? '{"action":"none","reason":"Allowed.","offendingUrls":[]}'
-                      : options.raw) ??
-                    JSON.stringify({
-                      action: "ban",
-                      reason: "Platform presumption; piracy unverified.",
-                      offendingUrls: ["https://bilibili.com/video/1"],
-                    })
-                  );
-                }),
+          generate:
+            options.generate ??
+            ((p, _system, _context, contents) =>
+              options.fault === "ai"
+                ? Effect.fail(
+                    new TextGenerationUnavailable({ operation: "generate" }),
+                  )
+                : Effect.sync(() => {
+                    inputs.push(p);
+                    options.suppliedContents?.push(...(contents ?? []));
+                    return (
+                      (p.includes("authorized")
+                        ? '{"action":"none","reason":"Allowed.","offendingUrls":[]}'
+                        : options.raw) ??
+                      JSON.stringify({
+                        action: "ban",
+                        reason: "Platform presumption; piracy unverified.",
+                        offendingUrls: ["https://bilibili.com/video/1"],
+                      })
+                    );
+                  })),
         }),
       ),
     ),
@@ -364,6 +389,146 @@ it.effect(
       { raw: "bad", fault: "notify" },
     ),
 );
+it.effect(
+  "outage aggregates missed counts without member reports, replay or cross-server failures",
+  () =>
+    scenario(
+      (i, records, reports, inputs, notices) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("failed");
+          expect(yield* i.receive({ ...evidence, messageId: "101" })).toBe(
+            "failed",
+          );
+          expect(yield* i.receive(evidence)).toBe("duplicate");
+          expect(yield* i.status("10")).toMatchObject({
+            missedMessages: 2,
+            active: ["judgment"],
+            failures: { judgment: 2 },
+          });
+          expect(yield* i.status("other")).toMatchObject({
+            missedMessages: 0,
+            active: [],
+          });
+          expect(notices).toEqual(["service failure"]);
+          expect([records, reports]).toEqual([[], []]);
+          expect(inputs).toHaveLength(2);
+        }),
+      { raw: "invalid" },
+    ),
+);
+it.effect(
+  "new successful events recover judgment health without replaying missed evidence",
+  () => {
+    const options = { raw: "invalid" };
+    return scenario(
+      (i, records, reports, inputs, notices) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("failed");
+          options.raw =
+            '{"action":"none","reason":"Allowed.","offendingUrls":[]}';
+          expect(yield* i.receive({ ...evidence, messageId: "new" })).toBe(
+            "none",
+          );
+          expect(yield* i.status("10")).toMatchObject({
+            active: [],
+            missedMessages: 1,
+          });
+          expect(yield* i.receive(evidence)).toBe("duplicate");
+          expect(inputs).toHaveLength(2);
+          expect([records, reports]).toEqual([[], []]);
+          expect(notices).toHaveLength(1);
+        }),
+      options,
+    );
+  },
+);
+it.effect.each([
+  { fault: "save", stage: "database" },
+  { fault: "delivery-state", stage: "database" },
+  { fault: "publish", stage: "database" },
+  { fault: "privacy", stage: "report" },
+])(
+  "service status identifies %s separately from a member finding",
+  ({ fault, stage }) =>
+    scenario(
+      (i) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("failed");
+          expect(yield* i.status("10")).toMatchObject({
+            active: [stage],
+            missedMessages: 1,
+            failures: { [stage]: 1 },
+          });
+        }),
+      { fault },
+    ),
+);
+it.effect(
+  "translation limitation uses shared service reporting without invalidating valid judgment",
+  () =>
+    scenario((i, records, reports, _inputs, notices) =>
+      Effect.gen(function* () {
+        expect(yield* i.receive(evidence)).toBe("reported");
+        yield* i.reportFailure("10", "30", "translation");
+        yield* i.reportFailure("10", "30", "translation");
+        expect(yield* i.status("10")).toMatchObject({
+          missedMessages: 0,
+          active: ["translation"],
+          failures: { translation: 2 },
+        });
+        expect(records[0]?.judgment.action).toBe("ban");
+        expect(reports).toHaveLength(1);
+        expect(notices).toHaveLength(1);
+        yield* i.recover("10", "translation");
+        expect(yield* i.status("10")).toMatchObject({ active: [] });
+      }),
+    ),
+);
+
+it.effect(
+  "interrupted judgment counts a missed message and retains only the durable claim",
+  () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      yield* scenario(
+        (i, records, reports) =>
+          Effect.gen(function* () {
+            const fiber = yield* i.receive(evidence).pipe(Effect.forkChild);
+            yield* Deferred.await(started);
+            yield* Fiber.interrupt(fiber);
+            expect(yield* i.status("10")).toMatchObject({
+              missedMessages: 1,
+              active: ["judgment"],
+            });
+            expect(yield* i.receive(evidence)).toBe("duplicate");
+            expect([records, reports]).toEqual([[], []]);
+          }),
+        {
+          generate: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+            ),
+        },
+      );
+    }),
+);
+it.effect(
+  "partial evidence preservation remains a service failure alongside the retained valid judgment",
+  () =>
+    scenario(
+      (i, records) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("failed");
+          expect(yield* i.status("10")).toMatchObject({
+            missedMessages: 1,
+            active: ["evidence"],
+          });
+          expect(records[0]?.judgment.action).toBe("ban");
+          expect(yield* i.receive(evidence)).toBe("duplicate");
+        }),
+      { fault: "partial" },
+    ),
+);
 
 it.effect(
   "actionable to harmless edits retain both versions and use the same report identity",
@@ -385,6 +550,23 @@ it.effect(
         expect(records[1]?.judgment.action).toBe("none");
         expect(reports).toHaveLength(2);
       }),
+    ),
+);
+
+it.effect(
+  "unknown delivery acknowledgment never claims complete reporting",
+  () =>
+    scenario(
+      (i, records) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("failed");
+          expect(yield* i.status("10")).toMatchObject({
+            missedMessages: 1,
+            active: ["report"],
+          });
+          expect(records).toHaveLength(1);
+        }),
+      { fault: "unknown" },
     ),
 );
 
