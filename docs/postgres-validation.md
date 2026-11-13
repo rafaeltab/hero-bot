@@ -18,19 +18,19 @@ this optional verification Layer.
 
 Tests require a disposable owned PostgreSQL database through
 `HERO_TEST_DATABASE_URL`; missing setup fails rather than skipping tests.
-Use independent development/production databases. Public fixture credentials below
-are exclusively for this local disposable container:
+Use independent development/production databases. In a checkout configured with
+`make install`, run:
 
 ```sh
-docker run --detach --rm --name hero-local-postgres \
-  -e POSTGRES_USER=hero_test -e POSTGRES_PASSWORD=hero_test \
-  -e POSTGRES_DB=hero_test -p 127.0.0.1:55418:5432 postgres:17.6-alpine
-docker exec hero-local-postgres pg_isready -U hero_test
-# Continue once ready:
-export HERO_TEST_DATABASE_URL=postgresql://hero_test:hero_test@127.0.0.1:55418/hero_test
+make infra-start
 pnpm check
-docker stop hero-local-postgres
+make infra-stop # retains database data
+# make worktree-clean # explicitly deletes this worktree's data and releases its slot
 ```
+
+Test and coverage commands load the app’s `.env`; exported
+`HERO_TEST_DATABASE_URL` values take precedence. Each worktree owns a labelled
+PostgreSQL container and persistent volume. See [setup commands](../README.md).
 
 CI provisions its own health-checked PostgreSQL service, requiring no production
 credentials. Installed pins: Drizzle 0.45.4, pg/@types/pg 8.23.1, PostgreSQL 17.6.

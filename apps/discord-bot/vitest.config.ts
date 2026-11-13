@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import "dotenv/config";
 import { defineConfig } from "vitest/config";
 
 const { coverageExcludes } = createRequire(import.meta.url)(

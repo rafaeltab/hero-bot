@@ -19,7 +19,8 @@
     "typecheck": {},
     "test": {
       "env": ["HERO_TEST_DATABASE_URL"],
-      "dependsOn": ["build"]
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env"]
     },
     "coverage": {
       "env": ["HERO_TEST_DATABASE_URL"],
@@ -31,6 +32,8 @@
   "globalPassThroughEnv": [
     "GITHUB_STEP_SUMMARY",
     "TMPDIR",
-    "__STRYKER_ACTIVE_MUTANT__"
+    "__STRYKER_ACTIVE_MUTANT__",
+    "CI",
+    "XDG_CONFIG_HOME"
   ]
 }

@@ -3,14 +3,17 @@
 This workspace includes an opt-in dfx development connection and a separate offline
 process baseline. It implements no moderation workflows.
 
-Install Node **24.22.2** and pnpm **12.16.1**, then run:
+Requires Linux, Make, Git, `flock`, Node **24.22.2**, pnpm **12.16.1**, and Docker
+for PostgreSQL. In an existing checkout, run:
 
 ```sh
-pnpm install --frozen-lockfile
-cp apps/discord-bot/.env.example apps/discord-bot/.env
-# Fill the ignored .env with a separate development application's bot token,
-# application ID and dedicated test-server ID (see setup link below).
+make install
+make infra-start
+pnpm check
+# Run explicitly when you need the shared development Discord identity:
 pnpm dev
+make stop           # stop this bot and infrastructure; retain database data
+make worktree-clean # also delete this worktree’s database data and release its slot
 ```
 
 Development connects through dfx, checks the READY application and sole server,
@@ -22,9 +25,19 @@ restart manually after edits.
 
 See [Discord development setup and verification](docs/discord-development.md) for
 separate identity/server setup, controlled evidence, live smoke steps and limitations.
-Secrets belong only in environment configuration or the ignored `.env`. CI requires
-no live Discord credentials. Do not use a production bot token or invite this bot to
-the real server.
+Shared development credentials belong in `$XDG_CONFIG_HOME/hero-bot/secrets.env`
+(default `~/.config/hero-bot/secrets.env`). `make install` imports existing development
+credentials from main once and refreshes the ignored app `.env`. Edit the shared
+source and rerun `make install`; generated-file edits are overwritten. Missing
+Discord credentials can remain blank for offline work; AI credentials are optional.
+CI requires no live Discord credentials. Do not use a production bot token.
+
+Installation starts no services. Dependency failures fail installation, but
+configuration failures only warn; resolve those diagnostics before running services.
+`make infra-stop` removes this worktree’s PostgreSQL container while retaining data.
+Ports remain stable on reinstall; resolve later port conflicts before retrying start.
+Tests load the app’s `.env`; exported variables take precedence. CI skips `.env`
+generation and uses its supplied URL. Cleanup preserves the checkout and shared secrets.
 
 The existing offline process baseline remains available independently:
 
@@ -35,8 +48,9 @@ HERO_ENV=development pnpm start
 
 It prints `hero-bot started (development)` and releases its timer on shutdown.
 `HERO_ENV=production pnpm start` labels that same offline baseline; this does not
-connect or deploy a production bot. Both app scripts read an optional ignored `.env`,
-with existing environment values taking precedence. Keep development `.env` files
+connect or deploy a production bot. `pnpm start` reads an optional ignored `.env`, with inherited values taking
+precedence. `pnpm dev` uses generated development configuration; multiple worktrees
+can connect the shared bot concurrently. Keep development `.env` files
 out of production artifacts. Hosting and production configuration remain undecided.
 
 Tests and coverage require the [disposable PostgreSQL setup](docs/postgres-validation.md).
@@ -45,7 +59,7 @@ Tests and coverage require the [disposable PostgreSQL setup](docs/postgres-valid
 pnpm lint        # Biome and test-specific assertion/registration checks
 pnpm format      # formatting and safe lint fixes
 pnpm typecheck
-pnpm test        # builds first, then Vitest; requires HERO_TEST_DATABASE_URL
+pnpm test        # builds first, then Vitest; run make infra-start first
 pnpm test:crap   # real-runtime attribution and gate fixtures
 pnpm coverage    # fresh 90/90 coverage plus per-function CRAP <=30
 pnpm crap        # revalidate existing fresh CRAP evidence

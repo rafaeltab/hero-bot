@@ -12,9 +12,11 @@ offline process baseline. No moderation, commands or production deployment are a
 2. Install it only in that test server with the bot scope, without Administrator
    or moderation permissions. This connection-only scaffold uses Guilds intent (1),
    not privileged message-content intent or application commands.
-3. Copy the app's `.env.example` to its ignored `.env`. Set `HERO_ENV=development`,
-   `DEV_DISCORD_BOT_TOKEN`, `DEV_DISCORD_APPLICATION_ID`, `DEV_DISCORD_GUILD_ID`.
-   Keep secrets out of commands, logs and commits.
+3. Run `make install`. Set `DEV_DISCORD_BOT_TOKEN`,
+   `DEV_DISCORD_APPLICATION_ID`, and `DEV_DISCORD_GUILD_ID` in the shared
+   `~/.config/hero-bot/secrets.env` (or under `$XDG_CONFIG_HOME`), then rerun
+   `make install` to refresh generated configuration. Keep secrets out of logs
+   and commits. See [setup commands](../README.md).
 4. Run `pnpm dev`; expect `development Discord ready` within 15 seconds and online
    presence in the test server. Invalid/missing configuration fails before connecting.
 5. Ctrl+C or SIGTERM closes scoped resources and prints `development Discord stopped`.
