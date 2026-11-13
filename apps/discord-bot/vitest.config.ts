@@ -6,12 +6,7 @@ const { coverageExcludes } = createRequire(import.meta.url)(
   "./tooling/production-policy.cjs",
 );
 
-if (!process.env.CI)
-  config({
-    path: new URL(".env", import.meta.url),
-    override: true,
-    quiet: true,
-  });
+config({ override: true, quiet: true });
 
 export default defineConfig({
   test: {
