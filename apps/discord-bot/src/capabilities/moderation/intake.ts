@@ -11,6 +11,7 @@ import {
 import { judgmentInstructions, parseJudgment } from "./judgment.ts";
 import {
   ConfigurationStore,
+  EvidenceContext,
   GuildAccess,
   IntakeStore,
   Reports,
@@ -76,6 +77,8 @@ export const IntakeLive = Layer.effect(
             ),
           );
       });
+    const context = yield* Effect.serviceOption(EvidenceContext);
+
     return Intake.of({
       status: (guild) => Effect.sync(() => structuredClone(snapshot(guild))),
       reportFailure,
@@ -115,16 +118,23 @@ export const IntakeLive = Layer.effect(
           channel = privateRoute.id;
           stage = "database";
           if (!(yield* store.claim(e))) return "duplicate" as const;
+          stage = "evidence";
+          const source = { ...e, currentRoles: a.actorRoles };
+          const contextual =
+            context._tag === "Some"
+              ? yield* context.value.acquire(source)
+              : source;
           const acquisition = reports.attachments?.();
-          const selected = yield* attachmentInputs(e.attachments, acquisition);
+          const selected = yield* attachmentInputs(
+            contextual.attachments,
+            acquisition,
+          );
           const supplied = {
-            ...e,
-            currentRoles: a.actorRoles,
+            ...contextual,
             ...(selected.inputs.length
               ? { attachmentInputs: selected.inputs }
               : {}),
           };
-
           const systemPrompt = `${judgmentInstructions}\n${config.prompt}`;
           stage = "judgment";
           const raw = yield* ai.generate(

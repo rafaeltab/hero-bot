@@ -46,8 +46,30 @@ export type Judgment = {
   reason: string;
   offendingUrls: string[];
 };
-/** Complete original gateway evidence; embeds and attributed quotes remain unmodified.
- * Linked destinations are never retrieved; original attachments may be privately copied. */
+/** Exact source and supplied context. Discord evidence is application acquired;
+ * linked destinations are never retrieved. Missing evidence has explicit limitations. */
+export type HistoryEntry = {
+  guildId: string;
+  authorId: string;
+  messageId: string;
+  at: string;
+  origin: "automatic" | "manual" | "unknown";
+  status: "pending" | "upheld" | "corrected" | "overturned";
+  summary: string;
+  correction?: string;
+  supportingEvidence: unknown[];
+};
+export type ConversationMessage = {
+  guildId: string;
+  channelId: string;
+  messageId: string;
+  authorId: string;
+  timestamp: string;
+  text: string;
+  roles: string[] | null;
+  embeds: unknown[];
+  replyReference: unknown;
+};
 export type AttachmentInput = {
   index: number;
   attachmentId: string | null;
@@ -58,7 +80,7 @@ export type AttachmentInput = {
   bytes?: number;
 };
 export type Evidence = {
-  /** Supplied means sent to the provider, not proof that every page/pixel was understood. */
+  /** Supplied means sent to provider, not proof of interpretation. */
   attachmentInputs?: AttachmentInput[];
   guildId: string;
   messageId: string;
@@ -67,6 +89,10 @@ export type Evidence = {
   channelId: string;
   parentId: string | null;
   currentRoles?: string[];
+  replyAncestors?: ConversationMessage[];
+  nearbyMessages?: ConversationMessage[];
+  moderationHistory?: HistoryEntry[];
+  historyAvailability?: "available" | "unavailable";
   channelContext?: { type: number; name: string | null };
   replyReference?: unknown;
   text: string;
@@ -135,7 +161,7 @@ export type ServiceHealth = {
 /** Versioned notification workflow. Claims are content-free and durable: failed or
  * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
  * Exact creations/edits share one report; uncertain delivery blocks updates.
- * Supported original image/PDF contents are supplied transiently; actionable originals are copied privately. No missed-event replay. */
+ * Actionable attachments are copied privately; Supported original image/PDF contents are supplied transiently. No missed-event replay. */
 export class Intake extends Context.Service<
   Intake,
   {

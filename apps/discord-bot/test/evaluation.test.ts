@@ -18,13 +18,22 @@ it("controlled policy evaluation produces comparable provenance and expected/act
     expect(result).toMatchObject({
       formatVersion: 1,
       mode: "controlled-plumbing-only",
-      caseVersion: 1,
+      caseVersion: 2,
       model: "gpt-6-luna",
       promptHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       caseHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       commit: expect.stringMatching(/^[a-f0-9]{40}$/),
     });
-    expect(result.results).toHaveLength(17);
+    expect(result.results).toHaveLength(20);
+    expect(
+      JSON.parse(
+        result.results.find((r: { id: string }) => r.id === "corrected-history")
+          .input,
+      ).moderationHistory[0],
+    ).toMatchObject({
+      status: "overturned",
+      correction: expect.stringContaining("mistaken"),
+    });
     expect(result.results[0]).toMatchObject({
       id: "bare-bilibili",
       expected: { action: "ban" },

@@ -29,7 +29,10 @@ const program = Effect.gen(function* () {
   for (const c of cases.cases) {
     const input = JSON.stringify({
       text: c.text,
-      limitations: ["Conversation/history/attachment contents unavailable."],
+      ...(c.evidence ?? {}),
+      limitations: c.limitations ?? [
+        "Conversation/history/attachment contents unavailable.",
+      ],
     });
     const result = yield* ai.generate(input, system).pipe(
       Effect.map((raw) => {

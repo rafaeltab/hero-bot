@@ -1,11 +1,14 @@
-# Notification-only versioned text intake (#30, #31)
+# Notification-only versioned text intake (#30, #31, #32, #33, #36)
 
-The `--moderation` executable now consumes guild `MESSAGE_CREATE` and `MESSAGE_UPDATE` events through dfx.
-The connection-only `--discord-development` smoke path is unchanged. This slice assesses exact creations/edits; reply/nearby context acquisition, moderation history,
-AI attachment contents, English translations, budgets, delivery repair and confidential
-intake are unavailable. Their absence is recorded in each supplied evidence packet;
-actionable attachment copying is available; metadata and an available quoted message are not claims of AI-inspected attachments or
-complete conversation history. Final live QA is tracked in #40.
+The `--moderation` executable consumes guild `MESSAGE_CREATE` and `MESSAGE_UPDATE`
+events through dfx. The connection-only `--discord-development` smoke path is unchanged.
+Creation and hydrated edit input cover ordinary/private course text channels,
+announcement channels, forum posts/replies (thread channels), public/private threads
+and voice-channel text. There is no audio or DM monitoring. #32 adds bounded Discord
+conversation and recorded moderation history; #31 owns durable edit progression,
+ordering and report-root reuse, now included from integration.
+AI attachment contents, translations, budgets, recovery and confidential intake
+remain separate capabilities. Final developer live QA is #40.
 
 ## Configure and run
 
@@ -31,6 +34,13 @@ channel; it is not an invitation to ordinary members. No overwrites are changed.
 Both configured routes and their child threads are exempt. Confidential intake on
 these routes is still unavailable.
 
+Optional bounds in the ignored application environment are `HERO_CONTEXT_REPLIES`
+(default/max 10), `HERO_CONTEXT_NEARBY` (default/max 20), and
+`HERO_CONTEXT_HISTORY` (default/max 10). Each is an integer from zero to its maximum;
+invalid settings block startup before connecting. Zero disables that evidence class
+and omissions remain explicit. Restart to apply changes. Triggering text is never
+shortened by these bounds.
+
 New configurations begin with the canonical initial policy in
 `apps/discord-bot/src/capabilities/moderation/policy.ts`. Existing saved prompts are
 never silently overwritten. View/edit with `/moderation config show` and
@@ -38,7 +48,7 @@ never silently overwritten. View/edit with `/moderation config show` and
 The prompt owns policy classifications; code validates the compact judgment.
 
 Start `pnpm --filter @hero-bot/discord-bot moderation`. This is a paid AI path for
-non-exempt creations and edits. Owner, designated Moderator roles, audit/reporting routes and
+non-exempt source versions. Owner, designated Moderator roles, audit/reporting routes and
 their threads bypass AI and storage; mapped Owner/Admin roles alone and course
 roles do not create exemptions. An unconfigured or unsafe server blocks its own
 intake. Private `/channel-status` reports delivered capabilities and later omissions;
@@ -53,11 +63,41 @@ identity/version, source roles, observed roles, configuration/prompt snapshot,
 model/provider and assessment time. No linked destinations are fetched. No AI tools
 or retrieval are enabled. PostgreSQL contains no attachment blobs.
 
+Context acquisition runs after exemptions and duplicate claims. It fetches at most
+10 same-channel reply ancestors and the 20 messages preceding the source, not the
+member's entire message history. Later conversation is explicitly outside the slice.
+Deleted/inaccessible messages, transport failures, cycles, foreign server/channel
+references and configured truncation are labelled; a genuinely empty content string
+remains empty. Context preserves authors, source/channel references, timestamps,
+embeds and supplied roles (null means unavailable). Context authors are not independent
+violation targets. No context is saved when an ordinary source receives `none`.
+
+Partial edits are hydrated through Discord REST without an ordinary-content cache.
+A partial edit is assessed only if the fetched edited timestamp matches the event;
+superseded intermediate events are explicitly unavailable rather than misattributed.
+Complete edit events preserve their own exact contents. #31 supplies durable
+progression and one-root edit behavior.
+
+History reads retained moderation findings for this server/member only, resolves
+latest actionable source versions and current corrections before selecting ten entries, and
+excludes the source being judged. A harmless edit does not overturn the earlier finding;
+only a recorded correction changes that finding's outcome. It supplies pending/confirmed findings and
+corrected/overturned outcomes with supporting evidence and known origin. The
+`IntakeStore.correctHistory` boundary records a newer complete outcome snapshot,
+without modifying the original evidence; it rejects stale timestamps and unmatched
+server/member/source identities. This is a boundary for the later authorized review
+workflow, not a chat command or audit-thread parser. A correction snapshot must carry
+its explanation and supporting evidence. Corrected/overturned entries are explicitly
+non-adverse in judgment instructions. A prior deletion alone is not proof of intent.
+Discord action-history ingestion and actual current restriction remain unavailable;
+empty recorded history is not proof of a clean history or unrestricted membership.
+History failures appear as unavailable in both evidence and the report root.
+
 The private Automatic report root separates recommendation from disabled execution,
-observed restriction (currently unavailable), source roles and unavailable history.
+observed restriction (currently unavailable), source roles and supplied recorded history.
 The thread contains the exact supplied JSON record, split into ordered Discord
-messages as needed. Concatenating those messages reconstructs the JSON. Root text
-may be abbreviated to Discord's limit; the thread and database retain full supplied
+messages as needed. Concatenating those messages reconstructs the JSON. Root history shows origin, subject/source, outcome, correction and relative time.
+Root text may be abbreviated to Discord's limit; the thread and database retain full supplied
 evidence. Mentions and embed unfurling are suppressed. There are no action controls,
 message deletion, member bans or role changes. Audit discussion is not stored,
 judged or parsed as a command.
@@ -81,7 +121,8 @@ fails rather than sending evidence elsewhere.
 
 Complete Discord update payloads are used directly. For partial updates the adapter
 fetches the message only from Discord and requires the returned edit timestamp to match the event. If another edit has
-already replaced that snapshot, it emits a content-free unavailability diagnostic;
+already replaced that snapshot, or Discord returns a different source identity, it
+records a content-free evidence failure and missed event in shared service health;
 it never labels the newer contents as the older version. Metadata-only updates are
 ignored. No ordinary-message cache or archive is introduced. Missed/deleted/unavailable
 snapshots are not automatically replayed. Linked destinations are never fetched.
@@ -138,7 +179,7 @@ No Discord credentials, paid AI or production permissions are needed:
 make infra-start
 pnpm build
 pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-process.test.ts test/intake-versions.test.ts
-pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts test/intake-discord.test.ts test/intake-persistence.test.ts test/ai.test.ts
+pnpm --filter @hero-bot/discord-bot exec vitest run test/context.test.ts test/intake.test.ts test/intake-discord.test.ts test/intake-persistence.test.ts test/ai.test.ts
 pnpm check
 ```
 
@@ -178,21 +219,35 @@ and replays the same identity to prove restart deduplication. Do not replay live
 source content to diagnose failures. Inspect the retained private record and
 service readiness instead; incomplete delivery is not automatically repaired.
 
-For #40's live edit walkthrough, use one ordinary test member's message. Start with
-harmless text (no report or retained contents), edit it to the unrelated Bilibili
-example (one root/thread with that exact edit timestamp), then edit to harmless
-(one updated root recommending `none`, both later versions retained, original ban
-recommendation still present in the thread). Make another actionable edit: it must
-append to the same thread. Record source timestamps and root/thread identities.
-Restart the development bot: there is no automatic historical scan or second root.
-Only a genuinely new edit should cause another judgment. Verify ordinary members
-cannot see either root or thread and source/member roles remain unchanged.
+For #32-specific deterministic faults and bounds, run:
 
-For #40's other live tests, submit an allowed text and an unrelated Bilibili example from
+```sh
+pnpm --filter @hero-bot/discord-bot exec vitest run test/context.test.ts -t 'inaccessible'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/context.test.ts -t 'default bounds'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/context.test.ts -t 'foreign'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-persistence.test.ts -t 'corrections'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-discord.test.ts -t 'supported surface'
+```
+
+These fixtures inject REST 403/history failure without changing real permissions,
+provide ten ancestors/twenty nearby/eleven history candidates, reject cross-server
+material, and reopen PostgreSQL after an overturned correction. They require no
+Discord credentials or paid calls. The surface cases run real dfx REST decoding for
+creations and partial-edit hydration, including course/forum/private-thread/voice
+text. They are protocol evidence, not a live permission certification.
+
+For #40's live test, submit an allowed text and an unrelated Bilibili example from
 an ordinary test member, then a link from the owner/designated moderator and within
 an audit thread. Inspect private root/thread visibility as an ordinary account,
-exact source/provenance/omissions, and unchanged source/member roles. Record actual
-observations; offline CI and controlled evaluations are not live model evidence.
+exact source/provenance/omissions, and unchanged source/member roles. Also post “Do you have unauthorized copies of the paid course?” from one ordinary
+account, then reply “Yes, DM me for the whole set” from another. Check that only the
+reply author is the subject and that ancestor authors/content are exact in the
+private thread. Repeat in a private course channel, forum post/reply, public and
+private thread, and voice-channel text. Run with bounds lowered to one and inspect
+omissions. Remove Read Message History on a disposable test channel, submit a reply,
+and verify unavailable context rather than clean/empty history; restore the explicit
+permission afterwards. Edit and verify source version/root reuse.
+Record actual observations; offline CI and controlled evaluations are not live model evidence.
 
 ## Policy evaluations
 
@@ -213,7 +268,7 @@ mode/time, model/provider/options, exact supplied input, expected action/URLs/re
 rubric, actual compact judgment or sanitized failure. Compare recommendations and
 URLs; manually review uncertainty and Bilibili-presumption wording against the
 rubrics. No numerical AI release threshold is invented. Paid evaluations remain
-explicit operator work. Attachment/history/edit/translation evaluation extensions
+explicit operator work. Attachment/edit/translation evaluation extensions
 belong with those later capabilities; this runner is their starting point.
 
 ## Attachment preservation (#33)

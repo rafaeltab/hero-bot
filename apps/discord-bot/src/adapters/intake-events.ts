@@ -1,14 +1,17 @@
 import { DiscordREST } from "dfx";
 import { DiscordGateway } from "dfx/gateway";
 import { Console, Effect, Stream } from "effect";
-import { Intake } from "../capabilities/moderation/contract.ts";
+import {
+  Intake,
+  ModerationUnavailable,
+} from "../capabilities/moderation/contract.ts";
 /** Structural gateway boundary also accepts controlled fixtures; no SDK types escape. */
 export type MessageCreation = {
   guild_id?: string | undefined;
   id: string;
   channel_id: string;
   timestamp: string;
-  edited_timestamp?: string | null;
+  edited_timestamp?: string | null | undefined;
   content: string;
   author: { id: string };
   member?: { roles: readonly string[] };
@@ -23,10 +26,32 @@ export const handleMessageCreation = (
 ) =>
   Effect.gen(function* () {
     if (!event.guild_id || !guildIds.includes(event.guild_id)) return;
+    if (typeof event.content !== "string")
+      return yield* Effect.fail(
+        new ModerationUnavailable({ reason: "discord" }),
+      );
     const rest = yield* DiscordREST;
     const channel = yield* rest.getChannel(event.channel_id);
+    if (
+      ("guild_id" in channel && channel.guild_id !== event.guild_id) ||
+      ![0, 2, 5, 10, 11, 12].includes(channel.type)
+    )
+      return;
     const parentId =
       "parent_id" in channel ? (channel.parent_id ?? null) : null;
+    const foreignQuote = [
+      event.message_reference,
+      event.referenced_message,
+    ].some((value) => {
+      const r = value as
+        | { guild_id?: string; channel_id?: string }
+        | null
+        | undefined;
+      return (
+        (r?.guild_id !== undefined && r.guild_id !== event.guild_id) ||
+        (r?.channel_id !== undefined && r.channel_id !== event.channel_id)
+      );
+    });
     const intake = yield* Intake;
     yield* intake.receive({
       guildId: event.guild_id,
@@ -42,18 +67,19 @@ export const handleMessageCreation = (
       replyReference: event.message_reference ?? null,
       text: event.content,
       embeds: [...(event.embeds ?? [])],
-      quotes: event.referenced_message ? [event.referenced_message] : [],
+      quotes:
+        event.referenced_message && !foreignQuote
+          ? [event.referenced_message]
+          : [],
       attachments: [...(event.attachments ?? [])],
       roles: [...(event.member?.roles ?? [])],
       restriction: "unavailable (no restriction-history inspection)",
       limitations: [
-        "Reply ancestors and nearby conversation: unavailable.",
-        "Moderation history and corrections: unavailable.",
+        ...(foreignQuote
+          ? ["Quoted content omitted: foreign-server/channel reference."]
+          : []),
         "Attachment AI availability is recorded per input; supplied bytes do not guarantee readability. Actionable originals are copied separately with explicit preservation status.",
         "English audit translation: unavailable; original evidence retained.",
-        ...(event.message_reference
-          ? ["Reply reference supplied; full reply chain unavailable."]
-          : []),
       ],
     });
   });
@@ -90,7 +116,11 @@ export const handleMessageUpdate = (
     }
     const rest = yield* DiscordREST;
     const message = yield* rest.getMessage(event.channel_id, event.id);
-    if (message.edited_timestamp !== event.edited_timestamp) {
+    if (
+      message.id !== event.id ||
+      message.channel_id !== event.channel_id ||
+      message.edited_timestamp !== event.edited_timestamp
+    ) {
       const intake = yield* Intake;
       yield* intake.reportFailure(event.guild_id, null, "evidence", true);
       return;
