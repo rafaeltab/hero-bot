@@ -16,7 +16,7 @@ offline process baseline. No moderation, commands or production deployment are a
    `DEV_DISCORD_APPLICATION_ID`, and `DEV_DISCORD_GUILD_ID` in the shared
    `~/.config/hero-bot/secrets.env` (or under `$XDG_CONFIG_HOME`), then rerun
    `make install` to refresh generated configuration. Keep secrets out of logs
-   and commits. See [worktree setup](worktree-setup.md).
+   and commits. See [setup commands](../README.md).
 4. Run `pnpm dev`; expect `development Discord ready` within 15 seconds and online
    presence in the test server. Invalid/missing configuration fails before connecting.
 5. Ctrl+C or SIGTERM closes scoped resources and prints `development Discord stopped`.

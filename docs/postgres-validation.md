@@ -30,7 +30,7 @@ make infra-stop # retains database data
 
 Local test and coverage commands load the allocated worktree URL automatically,
 overriding inherited `HERO_TEST_DATABASE_URL`. Each worktree owns a labelled
-PostgreSQL container and persistent volume. See [worktree setup](worktree-setup.md).
+PostgreSQL container and persistent volume. See [setup commands](../README.md).
 
 CI provisions its own health-checked PostgreSQL service, requiring no production
 credentials. Installed pins: Drizzle 0.45.4, pg/@types/pg 8.23.1, PostgreSQL 17.6.
