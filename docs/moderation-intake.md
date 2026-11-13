@@ -3,9 +3,9 @@
 The `--moderation` executable now consumes guild `MESSAGE_CREATE` events through dfx.
 The connection-only `--discord-development` smoke path is unchanged. This is the
 creation-only slice: edits, reply/nearby context acquisition, moderation history,
-attachment contents/copies, English translations, budgets, recovery and confidential
+AI attachment contents, English translations, budgets, recovery and confidential
 intake are unavailable. Their absence is recorded in each supplied evidence packet;
-metadata and an available quoted message are not claims of inspected attachments or
+actionable attachment copying is available; metadata and an available quoted message are not claims of AI-inspected attachments or
 complete conversation history. Final live QA is tracked in #40.
 
 ## Configure and run
@@ -129,3 +129,75 @@ URLs; manually review uncertainty and Bilibili-presumption wording against the
 rubrics. No numerical AI release threshold is invented. Paid evaluations remain
 explicit operator work. Attachment/history/edit/translation evaluation extensions
 belong with those later capabilities; this runner is their starting point.
+
+## Attachment preservation (#33)
+
+Only actionable triggering-message attachments are acquired. The application downloads
+HTTPS `cdn.discordapp.com/attachments/` URLs without following redirects. It never
+fetches linked sites. A judgment-scoped cache enforces one **20 MiB total** budget
+using actual streamed bytes and metadata preflight checks. All originals are attempted,
+including originals beyond the future four-item AI selection limit. AI image/file
+contents remain unavailable (#34); copying does not mean the model inspected them.
+The internal `AttachmentSession` passed to `Reports.publish` is the shared path for
+future AI acquisition: create it once per judgment, pass the same session to copying,
+and never create a second download budget. Neither bytes nor blobs enter PostgreSQL.
+
+The private thread receives original bytes as Discord uploads with the original
+filename. PostgreSQL delivery snapshots retain the source attachment/message/version,
+original metadata, copied channel/message/attachment identities, copied URL, size,
+and availability-check time. Source authorship remains in the original evidence.
+Root/thread identities and each upload's pending/uncertain/confirmed state are
+checkpointed. Delivery becomes complete only after copies and the complete text
+thread succeed. Uploads use deterministic Discord nonces and enforce nonce checking.
+Failed or uncertain acknowledgments remain `upload-unknown`; missing downloads,
+oversized files, malformed metadata and unavailable copies remain explicit omissions.
+A partial result triggers the existing content-free moderator service notification,
+then sanitized logging if notification fails. A process interruption or database
+checkpoint failure leaves partial/unknown progress. Do not replay the event or retry
+uploads to diagnose it. There is no automatic repair or evidence deletion.
+
+Availability is a last-checked observation, not indefinite retention. Discord can
+remove messages or expire URLs independently. A copied message's metadata can refresh
+its URL without consulting the source. As an operator with database and bot access,
+explicitly recheck one retained source (metadata GETs only, no downloads or uploads):
+
+```sh
+pnpm build
+pnpm --filter @hero-bot/discord-bot exec node --env-file-if-exists=.env tooling/check-attachment-copies.mjs GUILD_ID MESSAGE_ID
+```
+
+This updates the durable delivery snapshot and prints only identities/status/times.
+A 404 or absent attachment is `missing`; forbidden/network failures are `unavailable`,
+not proof of deletion. References remain retained in either case. Old records without
+copy state are unknown. A recheck does not rewrite an older thread's historical
+snapshot or automatically repost evidence. Restrict database/operator access as you
+do for the private audit channel.
+
+Reproduce offline copying, source removal, deleted copies, forbidden metadata,
+partial thread creation, unavailable download/upload, uncertain acknowledgments,
+restart deduplication and budget faults with no production credentials:
+
+```sh
+make infra-start
+pnpm build
+pnpm --filter @hero-bot/discord-bot exec vitest run test/attachment-evidence.test.ts test/attachment-workflow.test.ts
+pnpm check
+```
+
+The workflow test uses real disposable PostgreSQL and installed dfx multipart upload
+transport. Append `-t 'deleted source'`, `-t 'failed private upload'`,
+`-t 'missing attachment acknowledgment'`, `-t 'failed thread'` or
+`-t 'dishonest size'` to the workflow command for individual controlled faults.
+The adapter test confirms exact uploaded bytes and rechecks copies after the source
+becomes unavailable; it distinguishes deleted copies from forbidden access.
+It also proves five originals are preserved and AI selection/copying cannot each
+spend a separate 20 MiB budget. No punitive requests are permitted by the fixtures.
+
+For #40 live QA, send an actionable text plus a small original attachment from an
+ordinary development-server member. Confirm the private upload and source/version
+identities, then manually remove the test source as the human tester and confirm
+the copied original remains inspectable. Manually remove a test copy, run the explicit
+availability command and confirm `missing`. Use the offline procedures above for
+permission/download/upload faults rather than broad production permission changes.
+The agent never deletes test sources/copies. Live provider/Discord observations
+remain #40's developer checkpoint; controlled tests are not live QA evidence.
