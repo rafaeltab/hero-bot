@@ -136,7 +136,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
         delivered: (e, delivery) =>
           query(async () => {
             const result = await db.execute(
-              sql`update ${t} set delivery=${JSON.stringify(delivery)}::jsonb where guild_id=${e.guildId} and message_id=${e.messageId} and version=${e.version} and record is not null and delivery is null returning message_id`,
+              sql`update ${t} set delivery=${JSON.stringify(delivery)}::jsonb where guild_id=${e.guildId} and message_id=${e.messageId} and version=${e.version} and record is not null and (delivery is null or (delivery->>'rootId'=${delivery.rootId} and (delivery->>'threadId'='' or delivery->>'threadId'=${delivery.threadId}))) returning message_id`,
             );
             if (result.rows.length !== 1) throw Error();
           }),

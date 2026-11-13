@@ -68,11 +68,24 @@ export class IntakeStore extends Context.Service<
     >;
   }
 >()("hero-bot/IntakeStore") {}
+/** A judgment-scoped cached, bounded acquisition shared by AI selection and copying.
+ * Bytes are transient and must never enter RecordEntry or PostgreSQL. */
+export type AttachmentSession = {
+  acquire: (url: string, size: number) => Promise<Uint8Array>;
+};
 export class Reports extends Context.Service<
   Reports,
   {
+    /** Recheck copied-message identities, never source URLs; persist the returned snapshot. */
+    refresh: (
+      delivery: Delivery,
+    ) => Effect.Effect<Delivery, ModerationUnavailable>;
     publish: (
       record: RecordEntry,
+      checkpoint?: (
+        delivery: Delivery,
+      ) => Effect.Effect<void, ModerationUnavailable>,
+      acquisition?: AttachmentSession,
     ) => Effect.Effect<Delivery, ModerationUnavailable>;
     notify: (
       guildId: string,

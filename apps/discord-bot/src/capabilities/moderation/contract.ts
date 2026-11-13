@@ -102,9 +102,37 @@ export type RecordEntry = {
   observedRoles?: string[];
   systemPrompt?: string;
 };
-export type Delivery = { rootId: string; threadId: string };
-/** Notification workflow. Claims are content-free and durable: failed or interrupted
- * claims are not replayed. Never deletes, bans, or changes member roles.
+export type AttachmentCopy = {
+  sourceAttachmentId: string | null;
+  sourceMessageId: string;
+  sourceVersion: string;
+  metadata: unknown;
+  status:
+    | "pending"
+    | "available"
+    | "unavailable"
+    | "oversized"
+    | "upload-unknown"
+    | "missing";
+  copy?: {
+    channelId: string;
+    messageId: string;
+    attachmentId: string;
+    filename: string;
+    url: string;
+    size: number;
+  };
+  checkedAt?: string;
+};
+export type Delivery = {
+  rootId: string;
+  threadId: string;
+  /** Missing state on older records is unknown, never proof of completeness. */
+  state?: "partial" | "complete";
+  attachments?: AttachmentCopy[];
+};
+/** Notification workflow: failed or interrupted claims are not replayed.
+ * Never deletes, bans, or changes member roles. Copies actionable attachments privately.
  * Source decoding/context acquisition do not implement edit progress or root reuse. */
 export class Intake extends Context.Service<
   Intake,

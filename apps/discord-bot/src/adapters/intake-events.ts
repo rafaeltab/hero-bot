@@ -52,7 +52,7 @@ export const handleMessageCreation = (
       roles: [...(event.member?.roles ?? [])],
       restriction: "unavailable (no restriction-history inspection)",
       limitations: [
-        "Attachment contents and copying: unavailable; metadata only.",
+        "Attachment AI contents: unavailable; metadata only. Actionable originals are copied separately with explicit preservation status.",
         "English audit translation: unavailable; original evidence retained.",
       ],
     });

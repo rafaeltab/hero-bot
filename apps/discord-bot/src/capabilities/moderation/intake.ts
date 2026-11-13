@@ -94,8 +94,14 @@ export const IntakeLive = Layer.effect(
               new ModerationUnavailable({ reason: "discord" }),
             );
           }
-          const delivery = yield* reports.publish(record);
+          const delivery = yield* reports.publish(record, (progress) =>
+            store.delivered(e, progress),
+          );
           yield* store.delivered(e, delivery);
+          if (delivery.state === "partial")
+            return yield* Effect.fail(
+              new ModerationUnavailable({ reason: "discord" }),
+            );
           return "reported" as const;
         }).pipe(
           Effect.catch(() =>

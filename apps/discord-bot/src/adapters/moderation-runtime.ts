@@ -99,7 +99,7 @@ export const runModerationCommands = (
         ),
       );
     yield* Console.log(
-      "notification-only configuration ready; creation/edit input and bounded conversation/recorded history available; attachment contents unavailable",
+      "notification-only configuration ready; creation/edit input and bounded conversation/recorded history available; attachment preservation available; AI attachment contents unavailable",
     );
     return yield* Stream.mapEffect(
       Stream.fromQueue(events),
