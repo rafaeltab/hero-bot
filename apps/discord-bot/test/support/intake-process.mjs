@@ -10,6 +10,10 @@ const guild = process.env.DEV_MODERATION_GUILD_IDS;
 const calls = [];
 let sequence = 0;
 let aiCalls = 0;
+let delivered;
+const firstDelivery = new Promise((resolve) => {
+  delivered = resolve;
+});
 const source = (id, author, content) => ({
   guild_id: guild,
   id,
@@ -74,6 +78,7 @@ globalThis.fetch = async (_url, init) => {
   const input = JSON.parse(
     body.messages.find((m) => m.role === "user").content,
   );
+  if (input.messageId === "100" && input.text === "hello") await firstDelivery;
   const judgment = {
     action: input.text === "hello" ? "none" : "ban",
     reason: "Platform presumption; piracy unverified.",
@@ -139,12 +144,20 @@ const transport = Layer.mergeAll(
           );
         }, 20);
         setTimeout(() => {
+          socket.receive("MESSAGE_UPDATE", {
+            guild_id: guild,
+            id: "100",
+            channel_id: "20",
+            edited_timestamp: "2026-11-13T00:01:00Z",
+          });
+        }, 300);
+        setTimeout(() => {
           writeFileSync(
             process.env.HERO_TEST_REPORT_PATH,
             JSON.stringify({ calls, aiCalls }),
           );
           console.log("intake scenario complete");
-        }, 600);
+        }, 2000);
       }
       if (request.url.endsWith(`/guilds/${guild}`)) result = { owner_id: "11" };
       if (request.url.includes("/members/"))
@@ -169,8 +182,16 @@ const transport = Layer.mergeAll(
         ];
       if (request.url.endsWith("/channels/20"))
         result = { id: "20", guild_id: guild, type: 0, parent_id: null };
-      if (request.url.endsWith("/messages")) result = { id: "root" };
+      if (request.url.endsWith("/channels/20/messages/100"))
+        result = {
+          ...source("100", "12", "hello"),
+          edited_timestamp: "2026-11-13T00:01:00Z",
+        };
+      if (request.url.endsWith("/messages") || request.method === "PATCH")
+        result = { id: "root" };
       if (request.url.endsWith("/threads")) result = { id: "thread" };
+      if (request.url.endsWith("/channels/thread/messages"))
+        setTimeout(() => delivered(), 50);
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,

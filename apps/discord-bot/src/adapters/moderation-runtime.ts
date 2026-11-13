@@ -99,7 +99,7 @@ export const runModerationCommands = (
         ),
       );
     yield* Console.log(
-      "notification-only configuration ready; creation judgment available; attachment preservation available; edits/context/AI attachment contents unavailable",
+      "notification-only configuration ready; creation/edit judgment and attachment preservation available; context/AI attachment contents unavailable",
     );
     return yield* Stream.mapEffect(
       Stream.fromQueue(events),
