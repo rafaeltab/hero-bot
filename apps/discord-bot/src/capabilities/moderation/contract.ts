@@ -46,8 +46,30 @@ export type Judgment = {
   reason: string;
   offendingUrls: string[];
 };
-/** Complete original gateway evidence; embeds and attributed quotes remain unmodified.
- * Linked destinations are never retrieved; original attachments may be privately copied. */
+/** Exact source and supplied context. Discord evidence is application acquired;
+ * linked destinations are never retrieved. Missing evidence has explicit limitations. */
+export type HistoryEntry = {
+  guildId: string;
+  authorId: string;
+  messageId: string;
+  at: string;
+  origin: "automatic" | "manual" | "unknown";
+  status: "pending" | "upheld" | "corrected" | "overturned";
+  summary: string;
+  correction?: string;
+  supportingEvidence: unknown[];
+};
+export type ConversationMessage = {
+  guildId: string;
+  channelId: string;
+  messageId: string;
+  authorId: string;
+  timestamp: string;
+  text: string;
+  roles: string[] | null;
+  embeds: unknown[];
+  replyReference: unknown;
+};
 export type Evidence = {
   guildId: string;
   messageId: string;
@@ -56,6 +78,10 @@ export type Evidence = {
   channelId: string;
   parentId: string | null;
   currentRoles?: string[];
+  replyAncestors?: ConversationMessage[];
+  nearbyMessages?: ConversationMessage[];
+  moderationHistory?: HistoryEntry[];
+  historyAvailability?: "available" | "unavailable";
   channelContext?: { type: number; name: string | null };
   replyReference?: unknown;
   text: string;

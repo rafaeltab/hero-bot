@@ -3,6 +3,7 @@ import type {
   Configuration,
   Delivery,
   Evidence,
+  HistoryEntry,
   ModerationUnavailable,
   RecordEntry,
   ServiceHealth,
@@ -49,6 +50,15 @@ export type ReportUpdate = {
 export class IntakeStore extends Context.Service<
   IntakeStore,
   {
+    /** Current finding snapshots, resolved before applying any bound. */
+    memberHistory?: (
+      guildId: string,
+      authorId: string,
+    ) => Effect.Effect<HistoryEntry[], ModerationUnavailable>;
+    /** Replace a finding's current outcome without altering retained original evidence. */
+    correctHistory?: (
+      entry: HistoryEntry,
+    ) => Effect.Effect<void, ModerationUnavailable>;
     /** Serialize preservation and report updates per source across processes; never holds AI calls. */
     serialize: <A, E, R>(
       e: Evidence,
@@ -103,3 +113,13 @@ export class Reports extends Context.Service<
     ) => Effect.Effect<void, ModerationUnavailable>;
   }
 >()("hero-bot/Reports") {}
+
+/** Application-controlled evidence acquisition; runs only after exemption and claim. */
+export class EvidenceContext extends Context.Service<
+  EvidenceContext,
+  {
+    acquire: (
+      evidence: Evidence,
+    ) => Effect.Effect<Evidence, ModerationUnavailable>;
+  }
+>()("hero-bot/EvidenceContext") {}

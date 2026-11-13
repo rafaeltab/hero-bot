@@ -96,3 +96,138 @@ it.effect(
       }),
     ),
 );
+
+it.effect(
+  "recorded corrections survive restart and replace adverse history without altering original evidence",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const table = yield* configurationDatabase;
+        yield* Effect.gen(function* () {
+          const s = yield* IntakeStore;
+          yield* s.claim(evidence);
+          yield* s.save({
+            evidence,
+            configuration,
+            judgment: {
+              action: "delete",
+              reason: "Original finding.",
+              offendingUrls: [],
+            },
+            model: "gpt-6-luna",
+            provider: "openai/chat",
+            assessedAt: "2026-11-13T00:00:00Z",
+          });
+          yield* s.correctHistory!({
+            guildId: "10",
+            authorId: "12",
+            messageId: "100",
+            at: "2026-11-14T00:00:00Z",
+            origin: "manual",
+            status: "overturned",
+            summary: "Authorized copy",
+            correction: "Original deletion recommendation was mistaken",
+            supportingEvidence: ["License supplied by author"],
+          });
+        }).pipe(
+          Effect.provide(intakePostgresLayer(table)),
+          Effect.provide(databaseConfig),
+        );
+        yield* Effect.gen(function* () {
+          const s = yield* IntakeStore;
+          expect(yield* s.memberHistory!("10", "12")).toMatchObject([
+            {
+              status: "overturned",
+              summary: "Authorized copy",
+              supportingEvidence: ["License supplied by author"],
+            },
+          ]);
+          expect(
+            (yield* s.correctHistory!({
+              guildId: "10",
+              authorId: "12",
+              messageId: "100",
+              at: "2026-11-14T01:00:00+01:00",
+              origin: "manual",
+              status: "upheld",
+              summary: "Stale same instant",
+              supportingEvidence: [],
+            }).pipe(Effect.flip)).reason,
+          ).toBe("database");
+          expect(
+            (yield* s.correctHistory!({
+              guildId: "other",
+              authorId: "12",
+              messageId: "100",
+              at: "2026-11-15T00:00:00Z",
+              origin: "manual",
+              status: "upheld",
+              summary: "Foreign",
+              supportingEvidence: [],
+            }).pipe(Effect.flip)).reason,
+          ).toBe("database");
+          expect(yield* s.memberHistory!("other", "12")).toEqual([]);
+          expect(yield* s.memberHistory!("10", "other")).toEqual([]);
+          expect((yield* s.read("10", "100"))[0]?.record.judgment.reason).toBe(
+            "Original finding.",
+          );
+        }).pipe(
+          Effect.provide(intakePostgresLayer(table)),
+          Effect.provide(databaseConfig),
+        );
+      }),
+    ),
+);
+
+it.effect(
+  "a harmless edit does not overturn an earlier actionable finding in member history",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const table = yield* configurationDatabase;
+        yield* Effect.gen(function* () {
+          const store = yield* IntakeStore;
+          yield* store.claim(evidence);
+          yield* store.save({
+            evidence,
+            configuration,
+            judgment: {
+              action: "ban",
+              reason: "Original actionable source.",
+              offendingUrls: [],
+            },
+            model: "gpt-6-luna",
+            provider: "openai/chat",
+            assessedAt: "2026-11-13T00:00:00Z",
+          });
+          const edited = {
+            ...evidence,
+            version: "2026-11-13T00:01:00Z",
+            text: "Hello",
+          };
+          yield* store.claim(edited);
+          yield* store.save({
+            evidence: edited,
+            configuration,
+            judgment: {
+              action: "none",
+              reason: "Harmless edit.",
+              offendingUrls: [],
+            },
+            model: "gpt-6-luna",
+            provider: "openai/chat",
+            assessedAt: "2026-11-13T00:01:00Z",
+          });
+          expect(yield* store.memberHistory!("10", "12")).toMatchObject([
+            {
+              status: "pending",
+              summary: expect.stringContaining("Original actionable source."),
+            },
+          ]);
+        }).pipe(
+          Effect.provide(intakePostgresLayer(table)),
+          Effect.provide(databaseConfig),
+        );
+      }),
+    ),
+);

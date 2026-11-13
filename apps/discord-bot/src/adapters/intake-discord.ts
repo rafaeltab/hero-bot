@@ -33,10 +33,24 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
             );
           const latest = update?.latest ?? r;
           const e = latest.evidence;
+          const history =
+            e.moderationHistory === undefined ||
+            e.historyAvailability === "unavailable"
+              ? "unavailable (not a clean-history finding)"
+              : e.moderationHistory.length === 0
+                ? "No relevant recorded entries supplied; Discord action history unavailable."
+                : e.moderationHistory
+                    .slice(0, 3)
+                    .map(
+                      (h) =>
+                        `${h.origin} ${h.status} — ${h.authorId}, source ${h.messageId}, <t:${Math.floor(Date.parse(h.at) / 1000)}:R>: ${h.summary.slice(0, 120)}${h.correction ? `; correction: ${h.correction.slice(0, 120)}` : ""}`,
+                    )
+                    .join("\n");
+
           const body = {
             ...safe,
             content:
-              `Automatic report — ${e.authorId}\nRecommendation: ${latest.judgment.action}\nReason: ${latest.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${latest.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: unavailable.\nAttachment preservation: see evidence thread and private delivery record; partial until confirmed.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nNewest assessed source version: ${latest.evidence.version}\nNewest observed source version: ${update?.observedVersion ?? e.version}\nEarlier actionable evidence remains in the thread.\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
+              `Automatic report — ${e.authorId}\nRecommendation: ${latest.judgment.action}\nReason: ${latest.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${latest.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: ${history}\nContext: ${(e.replyAncestors ?? []).length} ancestors; ${(e.nearbyMessages ?? []).length} nearby. Full attributed evidence and omissions in thread.\nAttachment preservation: see evidence thread and private delivery record; partial until confirmed.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nNewest assessed source version: ${latest.evidence.version}\nNewest observed source version: ${update?.observedVersion ?? e.version}\nEarlier actionable evidence remains in the thread.\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
                 0,
                 1900,
               ),

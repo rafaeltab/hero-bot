@@ -4,6 +4,7 @@ import { Config, Effect, Layer } from "effect";
 import { Pool } from "pg";
 import type {
   Delivery,
+  HistoryEntry,
   RecordEntry,
 } from "../capabilities/moderation/contract.ts";
 import { ModerationUnavailable } from "../capabilities/moderation/contract.ts";
@@ -63,6 +64,9 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
           await tx.execute(
             sql`alter table ${t} add column if not exists state text not null default 'legacy'`,
           );
+          await tx.execute(
+            sql`alter table ${t} add column if not exists history_correction jsonb`,
+          );
           // Legacy partial deliveries are uncertain; never blindly create another root.
           await tx.execute(
             sql`update ${t} set state=case when delivery is not null and coalesce(delivery->>'state','unknown')='complete' then 'delivered' else 'delivering' end where record is not null and state='legacy'`,
@@ -79,6 +83,67 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
           );
         });
       return IntakeStore.of({
+        correctHistory: (entry) =>
+          query(async () => {
+            const result = await db.execute(
+              sql`update ${t} set history_correction=${JSON.stringify(entry)}::jsonb where guild_id=${entry.guildId} and message_id=${entry.messageId} and record->'evidence'->>'authorId'=${entry.authorId} and not exists (select 1 from ${t} prior where prior.guild_id=${entry.guildId} and prior.message_id=${entry.messageId} and (prior.history_correction->>'at')::timestamptz >= ${entry.at}::timestamptz) returning message_id`,
+            );
+            if (result.rows.length === 0) throw Error();
+          }),
+        memberHistory: (guildId, authorId) =>
+          query(async () => {
+            // Resolve the latest retained source version and its latest correction BEFORE
+            // any bound. A corrected finding can never fall outside a raw-event window.
+            const result = await db.execute<{
+              record: RecordEntry;
+              history_correction: HistoryEntry | null;
+            }>(
+              sql`select record,history_correction from ${t} where guild_id=${guildId} and record->'evidence'->>'authorId'=${authorId} and record->'judgment'->>'action' <> 'none' order by version::timestamptz desc`,
+            );
+            const entries = new Map<string, HistoryEntry>();
+            const corrections = new Map<string, HistoryEntry>();
+            for (const row of result.rows) {
+              const r = row.record;
+              const id = r.evidence.messageId;
+              if (!entries.has(id))
+                entries.set(id, {
+                  guildId,
+                  authorId,
+                  messageId: id,
+                  at: r.assessedAt,
+                  origin: "automatic",
+                  status: "pending",
+                  summary: `${r.judgment.action}: ${r.judgment.reason}`,
+                  supportingEvidence: [
+                    {
+                      guildId,
+                      messageId: id,
+                      channelId: r.evidence.channelId,
+                      authorId,
+                      version: r.evidence.version,
+                      text: r.evidence.text,
+                      roles: r.evidence.roles,
+                      parentId: r.evidence.parentId,
+                      embeds: r.evidence.embeds,
+                      quotes: r.evidence.quotes,
+                      attachments: r.evidence.attachments,
+                    },
+                  ],
+                });
+              const correction = row.history_correction;
+              if (
+                correction &&
+                (!corrections.has(id) ||
+                  Date.parse(corrections.get(id)?.at ?? "1970-01-01") <
+                    Date.parse(correction.at))
+              )
+                corrections.set(id, correction);
+            }
+            for (const [id, correction] of corrections)
+              entries.set(id, correction);
+            return [...entries.values()];
+          }),
+
         serialize: (e, task) =>
           Effect.scoped(
             Effect.gen(function* () {

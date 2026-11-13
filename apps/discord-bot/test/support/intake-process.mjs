@@ -188,7 +188,7 @@ const transport = Layer.mergeAll(
           edited_timestamp: "2026-11-13T00:01:00Z",
         };
       if (request.url.endsWith("/messages") || request.method === "PATCH")
-        result = { id: "root" };
+        result = request.method === "GET" ? [] : { id: "root" };
       if (request.url.endsWith("/threads")) result = { id: "thread" };
       if (request.url.endsWith("/channels/thread/messages"))
         setTimeout(() => delivered(), 50);

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "cases": [
     {
       "id": "bare-bilibili",
@@ -119,6 +119,64 @@
       "expected": "none",
       "urls": [],
       "rubric": "Contents unavailable, never invent misconduct."
+    },
+    {
+      "id": "contextual-reply",
+      "text": "Yes, DM me for the whole set.",
+      "evidence": {
+        "authorId": "subject",
+        "replyAncestors": [
+          {
+            "authorId": "context-author",
+            "messageId": "previous",
+            "text": "Do you have unauthorized copies of the paid course?"
+          }
+        ]
+      },
+      "limitations": ["External destinations not inspected."],
+      "expected": "ban",
+      "urls": [],
+      "rubric": "Infer apparent distribution from the supplied conversation; context author is not the independent target."
+    },
+    {
+      "id": "corrected-history",
+      "text": "The official free introduction helped me.",
+      "evidence": {
+        "authorId": "subject",
+        "moderationHistory": [
+          {
+            "authorId": "subject",
+            "messageId": "previous",
+            "origin": "manual",
+            "status": "overturned",
+            "summary": "Authorized sharing",
+            "correction": "License confirmed; earlier distribution allegation mistaken.",
+            "supportingEvidence": ["Publisher permission"]
+          }
+        ]
+      },
+      "limitations": ["Discord action history unavailable."],
+      "expected": "none",
+      "urls": [],
+      "rubric": "An overturned finding is not adverse evidence; do not revive it or infer intent from prior deletion."
+    },
+    {
+      "id": "context-author-link",
+      "text": "Thanks for the explanation.",
+      "evidence": {
+        "authorId": "subject",
+        "replyAncestors": [
+          {
+            "authorId": "another-author",
+            "messageId": "previous",
+            "text": "https://bilibili.com/video/1"
+          }
+        ]
+      },
+      "limitations": [],
+      "expected": "none",
+      "urls": [],
+      "rubric": "Do not attribute the context author link to the triggering author; only supplied source conduct is assessed."
     }
   ]
 }

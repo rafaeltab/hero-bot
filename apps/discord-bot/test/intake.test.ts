@@ -8,6 +8,7 @@ import {
 import { IntakeLive } from "../src/capabilities/moderation/intake.ts";
 import {
   ConfigurationStore,
+  EvidenceContext,
   GuildAccess,
   IntakeStore,
   Reports,
@@ -28,6 +29,8 @@ const scenario = (
     notices: string[],
   ) => Effect.Effect<void, unknown>,
   options: {
+    judge?: (input: string) => string;
+    context?: typeof EvidenceContext.Service;
     raw?: string;
     generate?: typeof TextGeneration.Service.generate;
     actorRoles?: string[];
@@ -51,6 +54,12 @@ const scenario = (
     yield* run(yield* Intake, records, reports, inputs, notices);
   }).pipe(
     Effect.provide(IntakeLive),
+    Effect.provide(
+      Layer.succeed(
+        EvidenceContext,
+        options.context ?? { acquire: (e) => Effect.succeed(e) },
+      ),
+    ),
     Effect.provide(
       Layer.mergeAll(
         Layer.succeed(ConfigurationStore, {
@@ -168,6 +177,7 @@ const scenario = (
                 : Effect.sync(() => {
                     inputs.push(p);
                     return (
+                      options.judge?.(p) ??
                       (p.includes("authorized")
                         ? '{"action":"none","reason":"Allowed.","offendingUrls":[]}'
                         : options.raw) ??
@@ -545,5 +555,135 @@ it.effect(
           expect(records).toHaveLength(1);
         }),
       { fault: "unknown" },
+    ),
+);
+
+it.effect(
+  "contextual reply judges only the triggering author and retains the exact supplied conversation",
+  () =>
+    scenario(
+      (i, records, reports, inputs) =>
+        Effect.gen(function* () {
+          expect(
+            yield* i.receive({
+              ...evidence,
+              text: "Yes, DM me for the whole set.",
+            }),
+          ).toBe("reported");
+          const supplied = JSON.parse(inputs[0] ?? "null");
+          expect(supplied.replyAncestors).toMatchObject([
+            {
+              guildId: "10",
+              messageId: "99",
+              authorId: "someone-else",
+              text: "Is this an unauthorized copy?",
+            },
+          ]);
+          expect(supplied.authorId).toBe("12");
+          expect(records[0]?.evidence).toEqual(supplied);
+          expect(records[0]?.judgment.action).toBe("review-hold");
+          expect(reports).toEqual(records);
+        }),
+      {
+        judge: (input) =>
+          JSON.stringify({
+            action:
+              JSON.parse(input).replyAncestors?.[0]?.text ===
+              "Is this an unauthorized copy?"
+                ? "review-hold"
+                : "none",
+            reason: "Possible contextual distribution; intent uncertain.",
+            offendingUrls: [],
+          }),
+        context: {
+          acquire: (e) =>
+            Effect.succeed({
+              ...e,
+              replyAncestors: [
+                {
+                  guildId: "10",
+                  channelId: "20",
+                  messageId: "99",
+                  authorId: "someone-else",
+                  text: "Is this an unauthorized copy?",
+                  timestamp: "today",
+                  roles: null,
+                  embeds: [],
+                  replyReference: null,
+                },
+              ],
+            }),
+        },
+      },
+    ),
+);
+
+it.effect(
+  "ordinary none discards acquired context as well as the triggering content",
+  () =>
+    scenario(
+      (i, records, reports, inputs) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive({ ...evidence, text: "Thank you" })).toBe(
+            "none",
+          );
+          expect(JSON.parse(inputs[0] ?? "null").nearbyMessages).toHaveLength(
+            1,
+          );
+          expect(records).toEqual([]);
+          expect(reports).toEqual([]);
+        }),
+      {
+        raw: '{"action":"none","reason":"Ordinary discussion.","offendingUrls":[]}',
+        context: {
+          acquire: (e) =>
+            Effect.succeed({
+              ...e,
+              nearbyMessages: [
+                {
+                  guildId: "10",
+                  channelId: "20",
+                  messageId: "90",
+                  authorId: "context-author",
+                  text: "ordinary conversation",
+                  timestamp: "today",
+                  roles: [],
+                  embeds: [],
+                  replyReference: null,
+                },
+              ],
+            }),
+        },
+      },
+    ),
+);
+
+it.effect(
+  "context acquisition failure aggregates missed events without judging or preserving member evidence",
+  () =>
+    scenario(
+      (i, records, reports, inputs, notices) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("failed");
+          expect(yield* i.receive(evidence)).toBe("duplicate");
+          expect(yield* i.receive({ ...evidence, messageId: "101" })).toBe(
+            "failed",
+          );
+          expect(yield* i.status("10")).toMatchObject({
+            missedMessages: 2,
+            failures: { evidence: 2 },
+            active: ["evidence"],
+          });
+          expect(inputs).toEqual([]);
+          expect(records).toEqual([]);
+          expect(reports).toEqual([]);
+          expect(notices).toHaveLength(1);
+        }),
+      {
+        context: {
+          acquire: () =>
+            Effect.fail(new ModerationUnavailable({ reason: "discord" })),
+        },
+      },
     ),
 );
