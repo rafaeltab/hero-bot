@@ -1,6 +1,8 @@
 import { expect, it } from "@effect/vitest";
 import { ConfigProvider, Deferred, Effect, Fiber, Layer } from "effect";
 import { openAITextLive } from "../src/adapters/ai.ts";
+import { budgetPostgresLayer } from "../src/adapters/budget-postgres.ts";
+import { AiBudget } from "../src/capabilities/ai-budget/contract.ts";
 import {
   Intake,
   ModerationUnavailable,
@@ -18,8 +20,12 @@ import {
   TextGeneration,
   TextGenerationUnavailable,
 } from "../src/capabilities/text-generation/contract.ts";
-
 import { auditFixtures } from "./support/audit-translation-fixture.ts";
+import { budgetPolicy } from "./support/budget-policy.ts";
+import {
+  configurationDatabase,
+  databaseConfig,
+} from "./support/configuration-database.ts";
 import { configuration, evidence } from "./support/intake-fixture.ts";
 
 const scenario = (
@@ -1226,7 +1232,7 @@ it.effect(
           expect(records[0]?.auditTranslation?.excerpts[0]?.english).toBe(
             "I have the complete paid course; message me privately.",
           );
-          expect(accounting).toEqual([
+          expect(accounting).toMatchObject([
             {
               guildId: "10",
               purpose: "judgment",
@@ -1379,4 +1385,164 @@ it.effect(
       },
     );
   },
+);
+
+it.effect(
+  "budget exhaustion counts missed new events, never replays, and preserves ordinary non-retention",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const table = yield* configurationDatabase;
+        let day = new Date("2026-11-14T12:00:00Z");
+        const budgetContext = yield* Layer.build(
+          budgetPostgresLayer(budgetPolicy, table, () => day),
+        ).pipe(Effect.provide(databaseConfig));
+        const budget = yield* AiBudget.pipe(Effect.provide(budgetContext));
+        let calls = 0;
+        yield* scenario(
+          (i, records, reports, _inputs, notices) =>
+            Effect.gen(function* () {
+              expect(
+                yield* i.receive({ ...evidence, messageId: "first" }),
+              ).toBe("none");
+              expect(
+                yield* i.receive({ ...evidence, messageId: "missed" }),
+              ).toBe("failed");
+              expect(
+                yield* i.receive({ ...evidence, messageId: "missed" }),
+              ).toBe("duplicate");
+              expect((yield* i.status("10")).budget).toMatchObject({
+                reason: "guild",
+                guild: { heldMicroUsd: 60 },
+              });
+              expect((yield* i.status("10")).missedMessages).toBe(1);
+              expect((yield* i.status("10")).active).toContain("budget");
+              expect(notices).toHaveLength(1);
+              expect(records).toEqual([]);
+              expect(reports).toEqual([]);
+              day = new Date("2026-11-15T00:00:00Z");
+              expect(
+                yield* i.receive({ ...evidence, messageId: "missed" }),
+              ).toBe("duplicate");
+              expect(
+                yield* i.receive({ ...evidence, messageId: "new-day" }),
+              ).toBe("none");
+              expect(calls).toBe(2);
+              expect((yield* i.status("10")).active).not.toContain("budget");
+            }),
+          {
+            aiLayer: openAITextLive({
+              beforeAttempt: budget.reserve,
+              afterAttempt: budget.settle,
+              maxOutputTokens: 10,
+              fetch: async () => {
+                calls++;
+                return Response.json({
+                  id: "qa",
+                  object: "chat.completion",
+                  created: 0,
+                  model: "gpt-6-luna",
+                  choices: [
+                    {
+                      index: 0,
+                      message: {
+                        role: "assistant",
+                        content:
+                          '{"action":"none","reason":"Allowed.","offendingUrls":[]}',
+                      },
+                      finish_reason: "stop",
+                    },
+                  ],
+                });
+              },
+            }),
+          },
+        ).pipe(
+          Effect.provide(budgetContext),
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                HERO_AI_API_KEY: "controlled",
+                HERO_AI_MODEL: "gpt-6-luna",
+              }),
+            ),
+          ),
+        );
+      }),
+    ),
+);
+
+it.effect(
+  "translation budget denial preserves the original recommendation with zero missed judgments",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const table = yield* configurationDatabase;
+        const ctx = yield* Layer.build(
+          budgetPostgresLayer(budgetPolicy, table),
+        ).pipe(Effect.provide(databaseConfig));
+        const budget = yield* AiBudget.pipe(Effect.provide(ctx));
+        let calls = 0;
+        yield* scenario(
+          (i, records, reports) =>
+            Effect.gen(function* () {
+              expect(
+                yield* i.receive({
+                  ...evidence,
+                  text: "我有完整的付费课程，请私信我。",
+                }),
+              ).toBe("reported");
+              expect(records[0]?.judgment.action).toBe("ban");
+              expect(records[0]?.auditTranslation?.status).toBe("unavailable");
+              expect(records[0]?.auditTranslation?.limitation).toContain(
+                "budget exhausted",
+              );
+              expect(reports).toHaveLength(1);
+              expect((yield* i.status("10")).missedMessages).toBe(0);
+              expect((yield* i.status("10")).budget).toMatchObject({
+                reason: "guild",
+                guild: { heldMicroUsd: 60 },
+              });
+              expect(calls).toBe(1);
+            }),
+          {
+            aiLayer: openAITextLive({
+              beforeAttempt: budget.reserve,
+              afterAttempt: budget.settle,
+              maxOutputTokens: 10,
+              fetch: async () => {
+                calls++;
+                return Response.json({
+                  id: "qa",
+                  object: "chat.completion",
+                  created: 0,
+                  model: "gpt-6-luna",
+                  choices: [
+                    {
+                      index: 0,
+                      message: {
+                        role: "assistant",
+                        content:
+                          '{"action":"ban","reason":"Original offer.","offendingUrls":[]}',
+                      },
+                      finish_reason: "stop",
+                    },
+                  ],
+                });
+              },
+            }),
+          },
+        ).pipe(
+          Effect.provide(ctx),
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                HERO_AI_API_KEY: "qa",
+                HERO_AI_MODEL: "gpt-6-luna",
+              }),
+            ),
+          ),
+        );
+      }),
+    ),
 );

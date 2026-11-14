@@ -596,6 +596,118 @@ edit to a harmless non-English message. Use the controlled failures above for ou
 observations rather than intentionally disrupting production credentials. Record
 actual private Discord/paid-provider observations separately; CI is protocol evidence.
 
+## Daily AI budgets (#37)
+
+Moderation startup requires `HERO_AI_BUDGET_JSON` (see the credential-free example
+in `apps/discord-bot/.env.example`). Missing/malformed configuration names this
+variable and this guide. Every configured moderation guild needs a positive daily
+`guildMicroUsd` limit; `sharedMicroUsd` limits the entire application in the same
+PostgreSQL ledger. Currency units are **USD millionths**: 1,000,000 = USD 1.
+Use safe positive integer amounts, token limits and prices. `version` identifies
+the operator configuration; `pricing` identifies the provider price sheet/date
+and any billing assumptions. `model` must be `gpt-6-luna`. The example prices are
+illustrative, **not verified provider pricing**. Supply conservative uncached input
+and output prices in USD millionths per million tokens. Cached input is charged
+at the ordinary input estimate; output includes all provider-reported output tokens.
+These are price-based usage estimates, not an invoice or an exact provider balance.
+Taxes, credits and unrelated consumers of the API key are outside this ledger.
+
+Set `maxInputTokens` to the provider model's **full maximum billable input**,
+including system instructions, image/file tokens and provider overhead, not an
+estimate based on typical messages. Set `maxOutputTokens` to an acceptable output
+cap (sent to the SDK on every attempt). Verify the model limits and prices with
+the provider before enabling paid moderation; a wrong bound/price cannot guarantee
+a real currency ceiling. A worst-case attempt reserves
+`ceil((maxInputTokens * inputPrice + maxOutputTokens * outputPrice)/1,000,000)`
+USD millionths. A daily limit below that amount deliberately admits no calls.
+There is no separate AI concurrency cap or application request timeout.
+
+All processes sharing one application must use the **same database, ledger table
+and budget policy**. Separate development/production databases and API keys.
+Stop all application instances before changing policy, update their configuration
+together, then restart. Retain the database/table: changing its name or deleting
+rows grants a new allowance and is not a supported reset procedure. Raising a
+limit resumes new eligible events using existing usage, never old messages.
+Lowering it cannot undo already billed work. Old rows retain their original policy,
+prices, purpose, attempt, admission timestamp, tokens (when known) and outcome;
+configuration changes never reprice earlier usage. No content, message/member
+identities, provider diagnostics or secrets enter the accounting ledger.
+
+Both judgment and conditional English audit translation use the same per-transport
+hooks. Each retry reserves separately, at most three attempts. Atomic PostgreSQL
+admission checks both ceilings across processes before contacting the provider;
+concurrent calls cannot all spend the same remaining capacity. An attempt with
+complete nonnegative integer input/output usage settles at its admission prices,
+rounded up once to USD millionths. Even failed calls are charged when the provider
+supplies usage. Unknown, partial, malformed or interrupted usage retains the entire
+reservation, never invents zero spend. A crash between reservation and transport,
+or failed settlement, also retains capacity. There is no automatic refund, replay
+or operator release of unknown holds. Database admission failure prevents the call;
+settlement failure surfaces accounting failure while preserving the hold.
+
+Days are **UTC calendar days**, fixed independently of the host timezone. An
+in-flight attempt belongs to its admission day even if it settles after midnight.
+A retry after midnight reserves the new day. Yesterday's unknown holds remain in
+yesterday's ledger; they are not claimed to be today's spend. New days resume new
+eligible events, not catch-up work. A restart on the same day retains every hold
+and settled amount. The conservative bound can leave unused capacity; insufficient
+capacity for the next full reservation counts as exhaustion before the numeric
+limit is exactly reached.
+
+Private `/doctor` and `/channel-status` include today's guild/shared reported
+estimates, held capacity, unknown/pending attempt count, limits and policy provenance.
+Only this guild's limit is exposed, alongside aggregate application totals.
+`reason` is `available`, `guild`, `shared`, `unconfigured`, or
+`accounting-unavailable`. Missing status storage is never presented as zero usage.
+A denied judgment increments the existing content-free missed-message count and
+`budget` service failure; it creates no finding or harmless-message archive.
+These missed counts remain process-local as documented above; ledger totals are
+durable. Translation denial retains the valid judgment and records an unavailable
+English audit limitation; it does not increment missed judgments. Status budget
+availability is current; active failure categories describe the last observed
+workflow failure and clear on a successful new judgment.
+
+### Controlled budget QA (no paid calls)
+
+Use pinned Node24.22.2/pnpm12.16.1 and disposable worktree PostgreSQL:
+
+```sh
+export PATH="$HOME/.local/share/mise/installs/node/24.22.2/bin:$PATH"
+make infra-start
+pnpm build
+pnpm --filter @hero-bot/discord-bot exec vitest run test/ai-budget.test.ts
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts -t 'budget exhaustion'
+pnpm check
+```
+
+The controlled prices are input 1/output 2 USD millionths per token, maximum
+40 input/10 output tokens: a 60-unit reservation, 100 per guild and 150 shared.
+Concurrent admissions in one guild admit exactly one of three calls. A second
+guild admits one; remaining shared capacity blocks another. Restart retains the
+60-unit unknown hold. A reported 10-input/5-output attempt settles at 20 units,
+including after midnight and policy change; duplicate settlement cannot overwrite
+it. A failed first attempt with reported 5-input/0-output costs 5, followed by a
+20-unit success and a separate 20-unit translation: total 45, three HTTP calls,
+then the next 60-unit reservation is denied. Interrupted transport aborts and
+retains 60 across restart. No transport needs an actual API key or network.
+
+The public intake procedure yields one ordinary `none` with unknown usage, then
+one denied new event: missed messages 1, active `budget`, reason `guild`, held 60,
+one service notice, zero retained ordinary records/reports. A duplicate does not
+increment counts. Controlled midnight permits a new event; the missed identity
+remains a duplicate and is never replayed. Tables and SDK requests are disposed on
+scope exit. `make infra-stop` stops this worktree's PostgreSQL when done.
+
+For #40 only, after confirming provider prices/full model bounds, use a separate
+development guild and a small positive daily limit **below one reservation**.
+Submit one ordinary eligible event: zero paid transport calls, a private budget
+service notice and missed count 1. Verify source/roles unchanged and no finding.
+Restart with a larger low-cost limit and submit a _new_ event; expect its judgment
+and optional translation to consume the configured estimates. Do not replay the
+missed event. Inspect today's `ai_budget_attempts` rows as an authorized operator
+for day/purpose/token/policy/outcome provenance; inspect status for estimates versus
+unknown holds. This is optional paid developer QA, not claimed live evidence.
+
 ## Policy evaluation and final QA handoff (#38)
 
 The extended existing runner, complete synthetic case set, controlled faults,

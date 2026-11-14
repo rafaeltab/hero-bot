@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, it } from "vitest";
+import { budgetPolicy } from "./support/budget-policy.ts";
 
 it.each(["SIGTERM", "SIGINT"] as const)(
   "runs the configured production entry point until %s and releases its lifetime",
@@ -112,8 +113,9 @@ it.each([
       HERO_AI_API_KEY: "secret-key",
       HERO_AI_MODEL: "gpt-6-luna",
       DATABASE_URL: "secret-invalid",
+      HERO_AI_BUDGET_JSON: JSON.stringify(budgetPolicy),
     },
-    "ModerationUnavailable",
+    "TextGenerationUnavailable",
   ],
 ])(
   "moderation entrypoint fails before dialing when shared startup configuration is invalid: %j",
@@ -170,6 +172,10 @@ it("moderation process acquires PostgreSQL and Discord then releases both on SIG
         HERO_AI_API_KEY: "offline-placeholder",
         HERO_AI_MODEL: "gpt-6-luna",
         DATABASE_URL: url.href,
+        HERO_AI_BUDGET_JSON: JSON.stringify({
+          ...budgetPolicy,
+          guildMicroUsd: { "10": 100, "12": 100 },
+        }),
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -205,7 +211,7 @@ it("moderation process acquires PostgreSQL and Discord then releases both on SIG
       "select count(*)::int as count from pg_stat_activity where application_name=$1",
       [name],
     );
-    expect(active.rows).toEqual([{ count: 2 }]);
+    expect(active.rows).toEqual([{ count: 3 }]);
     child.kill("SIGTERM");
     expect(await exited).toEqual({ code: 130, signal: null });
     const closed = await observer.query(

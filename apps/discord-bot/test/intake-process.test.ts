@@ -10,6 +10,7 @@ import {
   ConfigurationStore,
   IntakeStore,
 } from "../src/capabilities/moderation/ports.ts";
+import { budgetPolicy } from "./support/budget-policy.ts";
 import { configuration } from "./support/intake-fixture.ts";
 
 it("executable moderation path judges actionable/harmless creations, exempts owner, deduplicates, retains exact report evidence and issues zero punishments", async () => {
@@ -47,6 +48,11 @@ it("executable moderation path judges actionable/harmless creations, exempts own
       DEV_MODERATION_GUILD_IDS: guildId,
       HERO_AI_API_KEY: "offline-key",
       HERO_AI_MODEL: "gpt-6-luna",
+      HERO_AI_BUDGET_JSON: JSON.stringify({
+        ...budgetPolicy,
+        guildMicroUsd: { [guildId]: 1000 },
+        sharedMicroUsd: 1000000,
+      }),
       DATABASE_URL: process.env.HERO_TEST_DATABASE_URL,
       HERO_TEST_REPORT_PATH: path,
     },
@@ -161,6 +167,11 @@ it("executable moderation path judges actionable/harmless creations, exempts own
           DEV_MODERATION_GUILD_IDS: guildId,
           HERO_AI_API_KEY: "offline-key",
           HERO_AI_MODEL: "gpt-6-luna",
+          HERO_AI_BUDGET_JSON: JSON.stringify({
+            ...budgetPolicy,
+            guildMicroUsd: { [guildId]: 1000 },
+            sharedMicroUsd: 1000000,
+          }),
           DATABASE_URL: process.env.HERO_TEST_DATABASE_URL,
           HERO_TEST_REPORT_PATH: path,
         },

@@ -251,7 +251,9 @@ export const handleModerationInteraction = (event: unknown) =>
       const intake = yield* Effect.serviceOption(Intake);
       if (intake._tag === "Some") {
         const health = yield* intake.value.status(input.guild_id);
-        content += `\nService observations since process start ${health.since}: missed messages ${health.missedMessages}; active failures ${health.active.join(", ") || "none observed"}; failures ${JSON.stringify(health.failures)}. Historical loss before process start unknown. No automatic replay. Translation unavailable.`;
+        content += `\nService observations since process start ${health.since}: missed messages ${health.missedMessages}; active failures ${health.active.join(", ") || "none observed"}; failures ${JSON.stringify(health.failures)}. Historical loss before process start unknown. No automatic replay. Translation is separately labelled in retained evidence.`;
+        if (health.budget)
+          content += `\nDaily AI budget (USD millionths; UTC): ${JSON.stringify(health.budget)}. Unknown/pending usage retains capacity; no missed-event replay.`;
       }
     }
     const payload = {
