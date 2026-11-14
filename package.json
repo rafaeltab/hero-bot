@@ -22,7 +22,8 @@
     "lint:tests": "eslint \"apps/*/test/**/*.ts\" --max-warnings 0 && node --test scripts/test-lint/check.test.mjs",
     "mutation": "node scripts/mutation/run.mjs",
     "mutation:verify": "node --test scripts/mutation/*.test.mjs",
-    "postinstall": "node scripts/worktree/postinstall.mjs"
+    "postinstall": "node scripts/worktree/postinstall.mjs",
+    "mutation:verify:real": "node --test scripts/mutation/real.integration.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",

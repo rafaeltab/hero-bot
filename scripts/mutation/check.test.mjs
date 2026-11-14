@@ -12,6 +12,9 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
+// Fixtures must not publish their synthetic summaries to a real Actions run.
+delete process.env.GITHUB_STEP_SUMMARY;
+
 const cli = resolve("scripts/mutation/run.mjs");
 test("plans only added production lines against an explicit base, including working tree changes", () => {
   const root = mkdtempSync(`${tmpdir()}/hero-mutation-scope-`);
@@ -68,7 +71,7 @@ test("plans only added production lines against an explicit base, including work
       "src/value.ts:2:0-2:29",
     ]);
     assert.equal(output.base, base);
-    assert.equal(output.selection, "full-suite");
+    assert.equal(output.selection, "per-test");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -97,7 +100,7 @@ test("an empty scope replaces stale results with an explicit no-mutations outcom
     ]);
     assert.equal(existsSync(resolve(reports, "index.html")), false);
     assert.equal(
-      JSON.parse(readFileSync(resolve(reports, "mutation.json"))).noMutations,
+      JSON.parse(readFileSync(resolve(reports, "summary.json"))).complete,
       true,
     );
   } finally {

@@ -31,17 +31,3 @@ export function projectFingerprint(root) {
   }
   return hash.digest("hex");
 }
-
-export function cacheKey(plan, fingerprint) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        plan,
-        fingerprint,
-        node: process.version,
-        stryker: "10.1.1",
-      }),
-    )
-    .digest("hex")
-    .slice(0, 16);
-}
