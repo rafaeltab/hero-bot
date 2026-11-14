@@ -8,6 +8,7 @@ import {
 } from "./contract.ts";
 import { initialPolicy } from "./policy.ts";
 import { type Access, ConfigurationStore, GuildAccess } from "./ports.ts";
+import { describeReadiness } from "./readiness.ts";
 
 // Permissions are independent of fixed initial groups. No group/permission editor
 // is delivered in this slice; course groups never participate in these grants.
@@ -43,8 +44,10 @@ const channelProblem = (id: string | null, access: Access): string[] => {
 };
 const problems = (config: Configuration, access: Access) => [
   ...access.problems,
-  ...channelProblem(config.auditChannel, access),
-  ...channelProblem(config.reportingChannel, access),
+  ...channelProblem(config.auditChannel, access).map((p) => `Audit: ${p}`),
+  ...channelProblem(config.reportingChannel, access).map(
+    (p) => `Reporting entry: ${p}`,
+  ),
   ...(!config.prompt ? ["Set a policy prompt."] : []),
   ...Object.values(config.roles)
     .flat()
@@ -107,6 +110,8 @@ export const ModerationLive = Layer.effect(
             request.command.kind === "status"
               ? request.command.channelId
               : undefined,
+            request.command.kind === "status" ||
+              request.command.kind === "doctor",
           );
           const owner = access.ownerId === request.actorId;
           const can = (permission: Permission) =>
@@ -122,20 +127,16 @@ export const ModerationLive = Layer.effect(
           const moderator = can("inspect-channel-status");
           if (!moderator)
             return "Denied: current Owner/Admin or Moderator permission required.";
-          if (request.command.kind === "status") {
-            const channelId = request.command.channelId;
-            const channel = access.channels.find((c) => c.id === channelId);
-            const exempt = [
-              config.auditChannel,
-              config.reportingChannel,
-            ].includes(request.command.channelId);
-            return [
-              `Channel ${request.command.channelId}: ${channel ? "available" : "missing or cross-server"}; configured ${config.version > 0}; configured exempt route ${exempt}.`,
-              "Creation/edit input decoding, bounded conversation/recorded history and private attachment preservation: available when configured. Versioned edit progression and report-root reuse: available. Supported image/PDF input: available. Current restriction/action-history ingestion, AI budgets and confidential intake: unavailable until later slices.",
-              disabled,
-              ...problems(config, access),
-            ].join("\n");
-          }
+          if (
+            request.command.kind === "status" ||
+            request.command.kind === "doctor"
+          )
+            return describeReadiness(
+              config,
+              access,
+              problems(config, access),
+              request.command,
+            );
           if (!admin)
             return "Denied: only current Owner/Admin may configure or view policy history.";
           switch (request.command.kind) {

@@ -117,7 +117,7 @@ const definitions: Discord.ApplicationCommandCreateRequest[] = [
   },
   {
     name: "doctor",
-    description: "Private setup diagnostics (no message judgment yet)",
+    description: "Private notification-only readiness diagnostics",
     type: 1,
   },
 ];
@@ -165,7 +165,8 @@ const interaction = Schema.Struct({
 type Input = typeof interaction.Type;
 const parseCommand = (input: Input): Command | undefined => {
   const options = input.data.options ?? [];
-  if (input.data.name === "channel-status" || input.data.name === "doctor") {
+  if (input.data.name === "doctor") return { kind: "doctor" };
+  if (input.data.name === "channel-status") {
     const channel = options.find((o) => o.name === "channel")?.value;
     return {
       kind: "status",
@@ -238,23 +239,56 @@ export const handleModerationInteraction = (event: unknown) =>
           .pipe(
             Effect.catch(() =>
               Effect.succeed(
-                "Setup unavailable: verify Discord access and database connectivity; retry this command. No change confirmed.",
+                "ERROR setup unavailable: monitoring/evidence readiness cannot be verified. Verify bot server/member/channel access and DATABASE_URL/database connectivity; retry this command. See https://github.com/rafaeltab/hero-bot/blob/integration/spec-26-notification-only/docs/moderation-configuration.md. No change confirmed.",
               ),
             ),
           )
       : "Invalid configuration command.";
     if (
-      command?.kind === "status" &&
+      (command?.kind === "status" || command?.kind === "doctor") &&
       !content.startsWith("Denied:") &&
-      !content.startsWith("Setup unavailable")
+      !content.startsWith("ERROR setup unavailable")
     ) {
       const intake = yield* Effect.serviceOption(Intake);
       if (intake._tag === "Some") {
         const health = yield* intake.value.status(input.guild_id);
         content += `\nService observations since process start ${health.since}: missed messages ${health.missedMessages}; active failures ${health.active.join(", ") || "none observed"}; failures ${JSON.stringify(health.failures)}. Historical loss before process start unknown. No automatic replay. Translation is separately labelled in retained evidence.`;
-        if (health.budget)
+        for (const stage of health.active) {
+          const fixes = {
+            database:
+              "ERROR retention unavailable: restore DATABASE_URL and database SELECT/INSERT/UPDATE grants; new events only.",
+            evidence:
+              "ERROR evidence preservation/context incomplete: restore source/audit View Channel, Read Message History, Attach Files and private-thread membership; inspect retained omission markers.",
+            report:
+              "ERROR report delivery incomplete: restore private audit Send Messages, Create Public/Private Threads and Send Messages in Threads; inspect partial deliveries, never assume complete preservation.",
+            configuration:
+              "ERROR server setup blocked: Owner/Admin must repair mapped roles/private routes using /moderation config.",
+            accounting:
+              "ERROR accounting unavailable: restore database ledger access; retained holds must not be deleted.",
+            budget:
+              "WARNING AI calls stopped by last observed budget failure: current admission reason below may have changed; only new events resume.",
+            judgment:
+              "WARNING judgment unavailable: verify provider credentials/model/network; no finding or harmless result exists for missed events.",
+            translation:
+              "WARNING English audit translation unavailable: inspect retained originals; valid judgment is unchanged.",
+          };
+          content += `\n${fixes[stage]} See docs/moderation-intake.md.`;
+        }
+        content +=
+          "\nAI adapter: configured in moderation runtime; live provider connectivity unverified by read-only diagnostics. Active judgment/translation failures are last process observations, not a fresh provider probe. Fix provider credentials/model/network for affected calls; see docs/moderation-intake.md. No paid probe performed.";
+        if (health.budget) {
+          const reason = health.budget.reason;
+          content +=
+            reason === "available"
+              ? "\nAI budget: capacity available for a full reservation; this does not verify provider connectivity."
+              : `\n${reason === "accounting-unavailable" ? "ERROR" : "WARNING"} AI unavailable for affected calls: ${reason}. ${reason === "accounting-unavailable" ? "Restore DATABASE_URL/database ledger access; never delete ledger rows." : "Operator: verify HERO_AI_BUDGET_JSON guild/shared limits, usage and full-attempt reservation; wait for the UTC day boundary or stop all instances, adjust limits consistently and restart."} New events only; no automatic replay. See docs/moderation-intake.md#daily-ai-budgets-37.`;
           content += `\nDaily AI budget (USD millionths; UTC): ${JSON.stringify(health.budget)}. Unknown/pending usage retains capacity; no missed-event replay.`;
-      }
+        } else
+          content +=
+            "\nWARNING AI budget unverified: configure HERO_AI_BUDGET_JSON and database ledger; see docs/moderation-intake.md.";
+      } else
+        content +=
+          "\nWARNING AI/intake/budget unavailable in this process; start --moderation with required database, AI and budget configuration. See docs/moderation-intake.md.";
     }
     const payload = {
       content:

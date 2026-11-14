@@ -15,6 +15,7 @@ export type Configuration = {
 };
 export type Command =
   | { kind: "show" | "history" }
+  | { kind: "doctor" }
   | { kind: "prompt"; value: string }
   | { kind: "role"; group: PermissionGroup; roleId: string; remove: boolean }
   | {

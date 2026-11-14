@@ -126,7 +126,7 @@ it.effect.each([
     { kind: "status", channelId: "21" },
   ],
   [event({ name: "channel-status" }), { kind: "status", channelId: "20" }],
-  [event({ name: "doctor" }), { kind: "status", channelId: "20" }],
+  [event({ name: "doctor" }), { kind: "doctor" }],
 ])(
   "decodes Discord submission into the server-scoped workflow: %j",
   ([input, command]) =>
@@ -138,7 +138,7 @@ it.effect.each([
         data: { flags: 64 },
       });
       expect(JSON.parse(responses[1]?.body ?? "{}")).toMatchObject({
-        content: "done",
+        content: expect.stringContaining("done"),
         allowed_mentions: { parse: [] },
       });
     }),
@@ -234,5 +234,99 @@ it.effect.each([
       type: 5,
       data: { flags: 64 },
     });
+  }),
+);
+
+it.effect.each([
+  "guild",
+  "shared",
+  "unconfigured",
+  "accounting-unavailable",
+  "available",
+] as const)(
+  "private diagnostics explain current budget %s without notifying or invoking AI",
+  (reason) =>
+    Effect.gen(function* () {
+      const guilds: string[] = [];
+      const { responses, files } = yield* run(
+        event({ name: "doctor" }),
+        "readiness",
+      ).pipe(
+        Effect.provide(
+          Layer.succeed(Intake, {
+            receive: () => Effect.die("no judgment"),
+            reportFailure: () => Effect.die("no notification"),
+            recover: () => Effect.die("no mutation"),
+            status: (guild) => {
+              guilds.push(guild);
+              return Effect.succeed({
+                since: "startup",
+                missedMessages: 0,
+                active: [],
+                failures: {},
+                budget:
+                  reason === "accounting-unavailable"
+                    ? { reason }
+                    : {
+                        reason,
+                        day: "2026-11-14",
+                        timezone: "UTC",
+                        guild: {
+                          reportedMicroUsd: 0,
+                          heldMicroUsd: 60,
+                          unknownAttempts: 1,
+                        },
+                        shared: {
+                          reportedMicroUsd: 0,
+                          heldMicroUsd: 60,
+                          unknownAttempts: 1,
+                        },
+                        policy: {
+                          version: "test",
+                          pricing: "test",
+                          model: "gpt-6-luna",
+                          guildMicroUsd: { "10": 100 },
+                          sharedMicroUsd: 150,
+                          inputMicroUsdPerMillion: 1000000,
+                          outputMicroUsdPerMillion: 2000000,
+                          maxInputTokens: 40,
+                          maxOutputTokens: 10,
+                        },
+                      },
+              });
+            },
+          }),
+        ),
+      );
+      const text = files[0]
+        ? yield* Effect.promise(() => files[0]?.text() ?? Promise.resolve(""))
+        : responses.at(-1)?.body;
+      expect(text).toContain(
+        reason === "available" ? "capacity available" : reason,
+      );
+      expect(text).toContain("provider connectivity unverified");
+      expect(text).toContain("Historical loss before process start unknown");
+      expect(guilds).toEqual(["10"]);
+    }),
+);
+
+it.effect("failed authorization lookup never discloses service state", () =>
+  Effect.gen(function* () {
+    const { responses } = yield* run(
+      event({ name: "doctor" }),
+      "ignored",
+      true,
+    ).pipe(
+      Effect.provide(
+        Layer.succeed(Intake, {
+          status: () => Effect.die("must not disclose service status"),
+          receive: () => Effect.die("unused"),
+          reportFailure: () => Effect.void,
+          recover: () => Effect.void,
+        }),
+      ),
+    );
+    expect(responses.at(-1)?.body).toContain("ERROR setup unavailable");
+    expect(responses.at(-1)?.body).not.toContain("missed messages");
   }),
 );
