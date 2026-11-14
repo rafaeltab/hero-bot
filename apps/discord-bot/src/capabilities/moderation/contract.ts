@@ -92,6 +92,27 @@ export type Evidence = {
   restriction: string;
   limitations: string[];
 };
+/** Audit aid only. JSON pointers resolve in this record's immutable evidence;
+ * source identifies the assessed version, including retained context/history. */
+export type AuditTranslation = {
+  targetLanguage: "en";
+  status: "available" | "unavailable" | "not-needed";
+  source: { guildId: string; messageId: string; version: string };
+  detector: string;
+  systemPrompt: string;
+  model: string;
+  provider: string;
+  configurationVersion: number;
+  attemptedAt: string;
+  limitation: string;
+  excerpts: {
+    pointer: string;
+    original: string;
+    language: string;
+    english?: string;
+    status: "available" | "unavailable";
+  }[];
+};
 export type RecordEntry = {
   evidence: Evidence;
   configuration: Configuration;
@@ -101,6 +122,7 @@ export type RecordEntry = {
   assessedAt: string;
   observedRoles?: string[];
   systemPrompt?: string;
+  auditTranslation?: AuditTranslation;
 };
 export type AttachmentCopy = {
   sourceAttachmentId: string | null;

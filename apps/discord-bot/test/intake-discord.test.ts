@@ -5,6 +5,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { reportsDiscordLayer } from "../src/adapters/intake-discord.ts";
 import { Reports } from "../src/capabilities/moderation/ports.ts";
+import { auditRecord } from "./support/audit-translation-fixture.ts";
 import { configuration, evidence } from "./support/intake-fixture.ts";
 
 it.effect(
@@ -24,6 +25,7 @@ it.effect(
         model: "gpt-6-luna",
         provider: "openai/chat",
         assessedAt: "today",
+        auditTranslation: auditRecord,
       });
       expect(result).toEqual({
         rootId: "root",
@@ -39,6 +41,11 @@ it.effect(
         },
       });
       expect(requests[1]?.url).toContain("/messages/root/threads");
+      const thread = requests
+        .slice(2)
+        .map((r) => (r.body as { content: string }).content)
+        .join("");
+      expect(JSON.parse(thread).auditTranslation).toEqual(auditRecord);
       expect(JSON.stringify(requests[2]?.body)).toContain(
         "bilibili.com/video/1",
       );

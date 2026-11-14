@@ -426,3 +426,89 @@ Fixtures clean their disposable database tables and transports on scope exit;
 permissions or messages need changing. Production logs must never be populated by
 replaying ordinary content. The separate connection-only smoke remains unchanged.
 Actual paid-provider and private Discord observations remain final live QA #40.
+
+## English audit translations (#35)
+
+Judgment always receives original multilingual evidence first. Only evidence selected
+for retention (an actionable source, or a later version of an already retained source)
+is eligible for a separate English audit invocation. Ordinary `none` messages and
+their context are discarded without a translation call or content archive. English
+or URL-only evidence does not need a translation call. No linked destinations are
+retrieved, and translations never feed back into the recommendation.
+
+The immutable record and private evidence thread contain `auditTranslation`: target
+language, availability, original source server/message/version, exact original
+excerpts, JSON pointers into that version's preserved evidence, original language
+markers, English text, model/provider, configuration version, complete translation
+instructions, detector version and attempt time. Context/history pointers resolve
+against the supplied record, preserving their own authorship/message references,
+timestamps and corrections. These are audit aids, never independent findings about
+context authors or a replacement for originals. Earlier versions remain unchanged.
+
+Selection uses pinned local `tinyld` language detection over supplied text, embed/
+quote text and retained conversation/history text. Literal URL targets and metadata
+are excluded from detection. Detection is heuristic: short ASCII snippets (fewer
+than twelve letters), ambiguous and mixed-language passages can be missed. The
+record explicitly carries that limitation; `not-needed` means no excerpt was selected,
+not a guarantee that every character is English. Non-Latin passages within English
+text are also candidates. No missing attachment contents are inferred or reconstructed
+for translation. Inspect preserved originals when a language marker or translation
+looks uncertain; final live multilingual quality validation remains #40.
+
+Provider or structurally invalid translation output records `unavailable` against
+the exact originals, publishes the valid recommendation and evidence normally, and
+raises a separate content-free translation health notice with **zero missed messages**.
+That notice makes no claim of judgment/preservation failure. A later successful
+translation clears active translation health; an English event makes no recovery
+claim. Failed translations are not replayed. If the process is interrupted during
+translation, scope cleanup cancels the paid request; finalization attempts to retain
+the valid judgment with an interrupted audit limitation. Report delivery has not
+started in that case, and no automatic replay occurs. A separate database failure
+still reports inability to preserve truthfully.
+
+Judgment and translation use the same `TextGeneration` adapter. Both pass server
+identity and purpose through the existing per-attempt accounting hooks for #37;
+translation retries inherit the same maximum-three-attempt policy, provider delay,
+SDK retry disabling and transport cleanup. There is no global concurrency cap or
+short application timeout. Translation calls run outside source serialization locks.
+
+### Controlled multilingual QA
+
+No Discord credentials, paid calls or permission changes are required:
+
+```sh
+make infra-start
+pnpm build
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts -t 'multilingual'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts -t 'translation failure'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts -t 'audit translates exact'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts -t 'non-English ordinary none'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts -t 'interrupted audit'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake.test.ts -t 'installed provider carries'
+pnpm --filter @hero-bot/discord-bot exec vitest run test/intake-discord.test.ts test/intake-persistence.test.ts test/ai.test.ts
+pnpm check
+```
+
+Versioned originals/English meaning rubrics are in
+`apps/discord-bot/test/support/audit-translation-fixture.ts` (Spanish, Chinese,
+Russian, Portuguese and Arabic). Success observes original-first inputs, one
+separate translation invocation, exact pointer/original association, English text,
+unchanged recommendation, per-server purpose/token accounting, restart retention
+and actual dfx evidence-thread bodies. Failure injects a controlled provider error,
+malformed JSON, absent/mismatched pointers, wrong counts, invalid language/text,
+and interruption. Expect retained originals and valid judgment, unavailable audit
+markers, no punitive requests, no missed-judgment increase, no foreign-server health
+changes and no raw provider diagnostics in logs. The ordinary-none case observes
+zero translations/records, while subsequent retained harmless versions are translated.
+The context case preserves quoted authors and an overturned history correction.
+Tests dispose transports and database resources on scope exit; `make infra-stop`
+stops this worktree's infrastructure when finished.
+
+For #40, submit the fixture originals from an ordinary test member and compare
+meaning (distribution offer/private contact, negation and uncertainty), not identical
+English wording. Inspect original-first source/version references, language markers,
+configuration/model provenance and unchanged roles/source messages in the private
+thread. Repeat an English source with non-English quoted/context evidence and an
+edit to a harmless non-English message. Use the controlled failures above for outage
+observations rather than intentionally disrupting production credentials. Record
+actual private Discord/paid-provider observations separately; CI is protocol evidence.

@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer } from "effect";
+import { ConfigProvider, Deferred, Effect, Fiber, Layer } from "effect";
+import { openAITextLive } from "../src/adapters/ai.ts";
 import {
   Intake,
   ModerationUnavailable,
@@ -18,6 +19,7 @@ import {
   TextGenerationUnavailable,
 } from "../src/capabilities/text-generation/contract.ts";
 
+import { auditFixtures } from "./support/audit-translation-fixture.ts";
 import { configuration, evidence } from "./support/intake-fixture.ts";
 
 const scenario = (
@@ -29,6 +31,7 @@ const scenario = (
     notices: string[],
   ) => Effect.Effect<void, unknown>,
   options: {
+    aiLayer?: Layer.Layer<TextGeneration, TextGenerationUnavailable>;
     judge?: (input: string) => string;
     context?: typeof EvidenceContext.Service;
     raw?: string;
@@ -166,29 +169,30 @@ const scenario = (
               Effect.andThen(options.fault === "notify" ? fail() : Effect.void),
             ),
         }),
-        Layer.succeed(TextGeneration, {
-          generate:
-            options.generate ??
-            ((p) =>
-              options.fault === "ai"
-                ? Effect.fail(
-                    new TextGenerationUnavailable({ operation: "generate" }),
-                  )
-                : Effect.sync(() => {
-                    inputs.push(p);
-                    return (
-                      options.judge?.(p) ??
-                      (p.includes("authorized")
-                        ? '{"action":"none","reason":"Allowed.","offendingUrls":[]}'
-                        : options.raw) ??
-                      JSON.stringify({
-                        action: "ban",
-                        reason: "Platform presumption; piracy unverified.",
-                        offendingUrls: ["https://bilibili.com/video/1"],
-                      })
-                    );
-                  })),
-        }),
+        options.aiLayer ??
+          Layer.succeed(TextGeneration, {
+            generate:
+              options.generate ??
+              ((p) =>
+                options.fault === "ai"
+                  ? Effect.fail(
+                      new TextGenerationUnavailable({ operation: "generate" }),
+                    )
+                  : Effect.sync(() => {
+                      inputs.push(p);
+                      return (
+                        options.judge?.(p) ??
+                        (p.includes("authorized")
+                          ? '{"action":"none","reason":"Allowed.","offendingUrls":[]}'
+                          : options.raw) ??
+                        JSON.stringify({
+                          action: "ban",
+                          reason: "Platform presumption; piracy unverified.",
+                          offendingUrls: ["https://bilibili.com/video/1"],
+                        })
+                      );
+                    })),
+          }),
       ),
     ),
   );
@@ -686,4 +690,452 @@ it.effect(
         },
       },
     ),
+);
+
+it.effect(
+  "multilingual audit translates only retained evidence after original judgment",
+  () => {
+    const calls: { prompt: string; purpose: string | undefined }[] = [];
+    return scenario(
+      (i, records, reports) =>
+        Effect.gen(function* () {
+          expect(
+            yield* i.receive({
+              ...evidence,
+              text: "Tengo copias del curso de pago, escríbeme por privado.",
+            }),
+          ).toBe("reported");
+          expect(calls.map((c) => c.purpose)).toEqual([
+            "judgment",
+            "translation",
+          ]);
+          expect(JSON.parse(calls[0]?.prompt ?? "null").text).toBe(
+            "Tengo copias del curso de pago, escríbeme por privado.",
+          );
+          expect(records[0]).toMatchObject({
+            judgment: { action: "ban" },
+            auditTranslation: {
+              targetLanguage: "en",
+              status: "available",
+              excerpts: [
+                {
+                  pointer: "/text",
+                  original:
+                    "Tengo copias del curso de pago, escríbeme por privado.",
+                  language: "es",
+                  english:
+                    "I have copies of the paid course; message me privately.",
+                  status: "available",
+                },
+              ],
+            },
+          });
+          expect(reports).toEqual(records);
+        }),
+      {
+        generate: (prompt, _system, context) =>
+          Effect.sync(() => {
+            calls.push({ prompt, purpose: context?.purpose });
+            return context?.purpose === "translation"
+              ? JSON.stringify([
+                  {
+                    pointer: "/text",
+                    language: "es",
+                    english:
+                      "I have copies of the paid course; message me privately.",
+                  },
+                ])
+              : '{"action":"ban","reason":"Distribution offer.","offendingUrls":[]}';
+          }),
+      },
+    );
+  },
+);
+
+it.effect.each([
+  "provider",
+  "not-json",
+  "null",
+  "[]",
+  "[{}]",
+  '[{"pointer":"/text","language":"es","english":"","extra":true}]',
+  '[{"pointer":"/other","language":"es","english":"Wrong reference"}]',
+  '[{"pointer":"/text","language":42,"english":"Text"}]',
+  '[{"pointer":"/text","language":"spanish","english":"Text"}]',
+  '[{"pointer":"/text","language":"es","english":42}]',
+  '[{"pointer":"/text","language":"es","english":"  "}]',
+])(
+  "translation failure %s remains an audit limitation with valid judgment and preservation",
+  (response) =>
+    scenario(
+      (i, records, reports, _inputs, notices) =>
+        Effect.gen(function* () {
+          expect(
+            yield* i.receive({
+              ...evidence,
+              text: "我有完整的付费课程，私信我。",
+            }),
+          ).toBe("reported");
+          expect(records[0]).toMatchObject({
+            judgment: { action: "ban" },
+            auditTranslation: {
+              status: "unavailable",
+              excerpts: [
+                {
+                  pointer: "/text",
+                  original: "我有完整的付费课程，私信我。",
+                  status: "unavailable",
+                },
+              ],
+            },
+          });
+          expect(reports).toEqual(records);
+          expect(yield* i.status("10")).toMatchObject({
+            missedMessages: 0,
+            active: ["translation"],
+          });
+          expect(yield* i.status("other")).toMatchObject({
+            missedMessages: 0,
+            active: [],
+          });
+          expect(notices).toHaveLength(1);
+        }),
+      {
+        generate: (_p, _s, c) =>
+          c?.purpose === "translation"
+            ? response === "provider"
+              ? Effect.fail(
+                  new TextGenerationUnavailable({ operation: "generate" }),
+                )
+              : Effect.succeed(response)
+            : Effect.succeed(
+                '{"action":"ban","reason":"Distribution offer.","offendingUrls":[]}',
+              ),
+      },
+    ),
+);
+
+it.effect(
+  "non-English ordinary none is neither translated nor archived; retained harmless edits are translated",
+  () => {
+    const purposes: string[] = [];
+    let action = "none";
+    return scenario(
+      (i, records) =>
+        Effect.gen(function* () {
+          const source = {
+            ...evidence,
+            text: "Tengo copias del curso de pago, escríbeme por privado.",
+          };
+          expect(yield* i.receive(source)).toBe("none");
+          expect(records).toEqual([]);
+          expect(purposes).toEqual(["judgment"]);
+          action = "ban";
+          expect(
+            yield* i.receive({ ...source, version: "2026-11-13T00:01:00Z" }),
+          ).toBe("reported");
+          action = "none";
+          expect(
+            yield* i.receive({ ...source, version: "2026-11-13T00:02:00Z" }),
+          ).toBe("reported");
+          expect(
+            records.map((r) => r.auditTranslation?.source.version),
+          ).toEqual(["2026-11-13T00:01:00Z", "2026-11-13T00:02:00Z"]);
+          expect(records[1]?.judgment.action).toBe("none");
+          expect(purposes).toEqual([
+            "judgment",
+            "judgment",
+            "translation",
+            "judgment",
+            "translation",
+          ]);
+        }),
+      {
+        generate: (_p, _s, c) =>
+          Effect.sync(() => {
+            purposes.push(c?.purpose ?? "missing");
+            return c?.purpose === "translation"
+              ? '[{"pointer":"/text","language":"es","english":"I have copies of the paid course; message me privately."}]'
+              : JSON.stringify({
+                  action,
+                  reason: "Original assessed.",
+                  offendingUrls: [],
+                });
+          }),
+      },
+    );
+  },
+);
+
+it.effect(
+  "audit translates exact supplied context, quotes, embeds and corrected history without replacing originals",
+  () => {
+    const prompts: string[] = [];
+    return scenario(
+      (i, records) =>
+        Effect.gen(function* () {
+          expect(yield* i.receive(evidence)).toBe("reported");
+          expect(records[0]?.auditTranslation).toMatchObject({
+            status: "available",
+            excerpts: [
+              {
+                pointer: "/embeds/0/title",
+                original: "У меня есть копии платного курса.",
+                language: "ru",
+              },
+              {
+                pointer: "/quotes/0/content",
+                original: "我有完整的付费课程，私信我。",
+                language: "zh",
+              },
+              {
+                pointer: "/nearbyMessages/0/text",
+                original:
+                  "Tengo copias del curso de pago, escríbeme por privado.",
+                language: "es",
+              },
+              {
+                pointer: "/moderationHistory/0/correction",
+                original: "该判定已被推翻，请勿作为不利证据。",
+                language: "zh",
+              },
+            ],
+          });
+          expect(
+            JSON.parse(prompts[0] ?? "null").moderationHistory[0].status,
+          ).toBe("overturned");
+          expect(records[0]?.evidence.nearbyMessages?.[0]?.authorId).toBe(
+            "context-author",
+          );
+          expect(records[0]?.auditTranslation?.configurationVersion).toBe(1);
+        }),
+      {
+        context: {
+          acquire: (e) =>
+            Effect.succeed({
+              ...e,
+              embeds: [
+                {
+                  title: "У меня есть копии платного курса.",
+                  url: "https://example.org",
+                },
+              ],
+              quotes: [
+                {
+                  content: "我有完整的付费课程，私信我。",
+                  author: { id: "quote-author" },
+                },
+              ],
+              nearbyMessages: [
+                {
+                  guildId: "10",
+                  channelId: "20",
+                  messageId: "90",
+                  authorId: "context-author",
+                  timestamp: "today",
+                  text: "Tengo copias del curso de pago, escríbeme por privado.",
+                  roles: [],
+                  embeds: [],
+                  replyReference: null,
+                },
+              ],
+              moderationHistory: [
+                {
+                  guildId: "10",
+                  authorId: "12",
+                  messageId: "80",
+                  at: "today",
+                  origin: "manual",
+                  status: "overturned",
+                  summary: "Correction",
+                  correction: "该判定已被推翻，请勿作为不利证据。",
+                  supportingEvidence: [],
+                },
+              ],
+            }),
+        },
+        generate: (p, _s, c) =>
+          Effect.sync(() => {
+            prompts.push(p);
+            return c?.purpose === "translation"
+              ? JSON.stringify(
+                  JSON.parse(p).map((v: { pointer: string }, i: number) => ({
+                    pointer: v.pointer,
+                    language: ["ru", "zh", "es", "zh"][i],
+                    english: "Controlled English audit excerpt.",
+                  })),
+                )
+              : '{"action":"ban","reason":"Original assessed.","offendingUrls":[]}';
+          }),
+      },
+    );
+  },
+);
+
+it.effect.each(auditFixtures)(
+  "multilingual fixture $language preserves original and English audit independently",
+  (fixture) =>
+    scenario(
+      (i, records) =>
+        Effect.gen(function* () {
+          expect(
+            yield* i.receive({ ...evidence, text: fixture.original }),
+          ).toBe("reported");
+          expect(records[0]?.auditTranslation).toMatchObject({
+            status: "available",
+            excerpts: [
+              {
+                original: fixture.original,
+                language: fixture.language,
+                english: fixture.english,
+              },
+            ],
+          });
+        }),
+      {
+        generate: (_p, _s, c) =>
+          Effect.succeed(
+            c?.purpose === "translation"
+              ? JSON.stringify([
+                  {
+                    pointer: "/text",
+                    language: fixture.language,
+                    english: fixture.english,
+                  },
+                ])
+              : '{"action":"ban","reason":"Original distribution offer.","offendingUrls":[]}',
+          ),
+      },
+    ),
+);
+
+it.effect(
+  "installed provider carries original-first audit calls and shared per-server token accounting without tools",
+  () => {
+    const requests: {
+      messages: { role: string; content: string }[];
+      tools?: unknown;
+    }[] = [];
+    const accounting: unknown[] = [];
+    return scenario(
+      (i, records) =>
+        Effect.gen(function* () {
+          expect(
+            yield* i.receive({
+              ...evidence,
+              text: "我有完整的付费课程，私信我。",
+            }),
+          ).toBe("reported");
+          expect(requests).toHaveLength(2);
+          expect(requests.map((r) => r.tools)).toEqual([undefined, undefined]);
+          expect(requests[0]?.messages[1]?.content).toContain(
+            "我有完整的付费课程，私信我。",
+          );
+          expect(requests[1]?.messages[0]?.content).toContain("never judge");
+          expect(records[0]?.auditTranslation?.excerpts[0]?.english).toBe(
+            "I have the complete paid course; message me privately.",
+          );
+          expect(accounting).toEqual([
+            {
+              guildId: "10",
+              purpose: "judgment",
+              attempt: 1,
+              outcome: "succeeded",
+              inputTokens: 20,
+              outputTokens: 10,
+            },
+            {
+              guildId: "10",
+              purpose: "translation",
+              attempt: 1,
+              outcome: "succeeded",
+              inputTokens: 20,
+              outputTokens: 10,
+            },
+          ]);
+        }),
+      {
+        aiLayer: openAITextLive({
+          modelId: "gpt-6-luna",
+          afterAttempt: (event) =>
+            Effect.sync(() => {
+              accounting.push(event);
+            }),
+          fetch: async (_url, init) => {
+            requests.push(JSON.parse(String(init?.body)));
+            return Response.json({
+              id: "controlled",
+              object: "chat.completion",
+              created: 0,
+              model: "gpt-6-luna",
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: "assistant",
+                    content:
+                      requests.length === 1
+                        ? '{"action":"ban","reason":"Original distribution offer.","offendingUrls":[]}'
+                        : '[{"pointer":"/text","language":"zh","english":"I have the complete paid course; message me privately."}]',
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: {
+                prompt_tokens: 20,
+                completion_tokens: 10,
+                total_tokens: 30,
+              },
+            });
+          },
+        }).pipe(
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                HERO_AI_API_KEY: "controlled",
+                HERO_AI_MODEL: "gpt-6-luna",
+              }),
+            ),
+          ),
+        ),
+      },
+    );
+  },
+);
+
+it.effect(
+  "interrupted audit translation preserves valid original judgment and records a distinct audit limitation",
+  () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      yield* scenario(
+        (i, records, reports) =>
+          Effect.gen(function* () {
+            const fiber = yield* i
+              .receive({ ...evidence, text: "我有完整的付费课程，私信我。" })
+              .pipe(Effect.forkChild);
+            yield* Deferred.await(started);
+            yield* Fiber.interrupt(fiber);
+            expect(records[0]).toMatchObject({
+              judgment: { action: "ban" },
+              auditTranslation: { status: "unavailable" },
+            });
+            expect(reports).toEqual([]);
+            expect(yield* i.status("10")).toMatchObject({
+              active: ["translation"],
+              missedMessages: 0,
+            });
+          }),
+        {
+          generate: (_p, _s, c) =>
+            c?.purpose === "translation"
+              ? Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                )
+              : Effect.succeed(
+                  '{"action":"ban","reason":"Original assessed.","offendingUrls":[]}',
+                ),
+        },
+      );
+    }),
 );

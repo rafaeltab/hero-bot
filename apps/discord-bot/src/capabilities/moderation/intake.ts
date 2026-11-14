@@ -15,6 +15,7 @@ import {
   IntakeStore,
   Reports,
 } from "./ports.ts";
+import { translateAudit } from "./translation.ts";
 export const IntakeLive = Layer.effect(
   Intake,
   Effect.gen(function* () {
@@ -147,14 +148,42 @@ export const IntakeLive = Layer.effect(
             observedRoles: a.actorRoles,
           };
           stage = "database";
-          return yield* store.serialize(
+          const retain = yield* store.serialize(
             e,
             Effect.gen(function* () {
               const prior = yield* store.read(e.guildId, e.messageId);
               if (judgment.action === "none" && prior.length === 0) {
                 yield* store.assessed(e);
-                return "none" as const;
+                return false;
               }
+              return true;
+            }),
+          );
+          if (!retain) return "none" as const;
+          stage = "translation";
+          const auditTranslation = yield* translateAudit(record, ai).pipe(
+            Effect.onInterrupt(() =>
+              store
+                .serialize(
+                  e,
+                  store.save(record).pipe(Effect.andThen(store.assessed(e))),
+                )
+                .pipe(
+                  Effect.catch(() =>
+                    reportFailure(e.guildId, channel, "database", true),
+                  ),
+                ),
+            ),
+          );
+          record.auditTranslation = auditTranslation;
+          if (auditTranslation.status === "unavailable")
+            yield* reportFailure(e.guildId, channel, "translation");
+          else if (auditTranslation.status === "available")
+            yield* recover(e.guildId, "translation");
+          stage = "database";
+          return yield* store.serialize(
+            e,
+            Effect.gen(function* () {
               yield* store.save(record);
               yield* store.assessed(e);
               const progress = yield* store.progress(e);
@@ -222,7 +251,7 @@ export const IntakeLive = Layer.effect(
         }).pipe(
           Effect.onInterrupt(() =>
             Effect.sync(() => {
-              recordFailure(e.guildId, stage, true);
+              recordFailure(e.guildId, stage, stage !== "translation");
             }),
           ),
           Effect.catch((error) =>
