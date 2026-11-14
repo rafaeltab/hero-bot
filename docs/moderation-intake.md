@@ -707,3 +707,14 @@ and optional translation to consume the configured estimates. Do not replay the
 missed event. Inspect today's `ai_budget_attempts` rows as an authorized operator
 for day/purpose/token/policy/outcome provenance; inspect status for estimates versus
 unknown holds. This is optional paid developer QA, not claimed live evidence.
+
+## Policy evaluation and final QA handoff (#38)
+
+The extended existing runner, complete synthetic case set, controlled faults,
+immutable comparable reports, explicit paid spend context and representative #40
+selection are documented in [evaluations/README.md](../evaluations/README.md).
+These reports assess original evidence and record English audit results separately.
+Controlled outputs prove plumbing only; live model quality/readability and Discord
+observations remain unverified until the developer performs #40. The runner never
+connects to Discord or changes the saved runtime policy. #37 owns durable budgeting;
+the standalone paid tool's accounting limitation is explicit in those instructions.

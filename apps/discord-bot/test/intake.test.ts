@@ -252,6 +252,17 @@ it.effect.each([
   { authorId: "11" },
   { channelId: "30" },
   { channelId: "31" },
+  {
+    channelId: "31",
+    authorId: "helpful-reporter",
+    text: "Someone sent me these course links; here is their message.",
+    quotes: [
+      {
+        author: { id: "reported-author" },
+        text: "Get the paid course free: https://bilibili.com/video/1",
+      },
+    ],
+  },
   { parentId: "30" },
   { parentId: "31" },
 ])("exempt source is never judged, archived or reported: %j", (change) =>
