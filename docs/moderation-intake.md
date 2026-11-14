@@ -7,8 +7,8 @@ announcement channels, forum posts/replies (thread channels), public/private thr
 and voice-channel text. There is no audio or DM monitoring. #32 adds bounded Discord
 conversation and recorded moderation history; #31 owns durable edit progression,
 ordering and report-root reuse, now included from integration.
-AI attachment contents, translations, budgets, recovery and confidential intake
-remain separate capabilities. Final developer live QA is #40.
+AI attachment contents, English audit translations and daily budgets are described
+below. Automatic recovery and confidential intake remain unavailable. Final developer live QA is #40.
 
 ## Configure and run
 
@@ -260,7 +260,7 @@ measure model quality. Run from the repository root:
 pnpm build
 pnpm --filter @hero-bot/discord-bot exec node tooling/evaluate-policy.mjs --output /tmp/hero-policy-controlled.json
 # Explicit opt-in to paid calls, loading the ignored app environment:
-pnpm --filter @hero-bot/discord-bot exec node --env-file-if-exists=.env tooling/evaluate-policy.mjs --paid --output /tmp/hero-policy-paid.json
+pnpm --filter @hero-bot/discord-bot exec node --env-file-if-exists=.env tooling/evaluate-policy.mjs --paid --guild 123456789012345678 --spend-context QA40-approved-run-1 --output /tmp/hero-policy-paid.json
 ```
 
 Reports include format/case version, case hash, complete prompt/hash, commit, run
@@ -375,8 +375,8 @@ The shared text-generation adapter accepts optional `{guildId, purpose}` metadat
 (`judgment` or `translation`). Its construction hooks `beforeAttempt` and
 `afterAttempt` expose each transport attempt and sanitized outcome/token usage;
 failed/interrupted usage can be unknown, never assumed free. These are the extension
-points for #37 budget reservation/accounting and #35 separate translations, not
-claims that either feature is delivered. The public `Intake.reportFailure` and
+points used by the delivered #37 durable budget accounting and #35 separate
+translations described below. The public `Intake.reportFailure` and
 `recover` operations accept only server, verified route and stage; translation
 callers omit the missed-message flag so an audit limitation cannot invalidate the
 judgment. No source evidence is accepted by this service reporting path.
@@ -490,8 +490,13 @@ Discord access; requires valid provider configuration in the ignored environment
 
 ```sh
 pnpm build
-pnpm --filter @hero-bot/discord-bot exec node --env-file-if-exists=.env tooling/evaluate-attachments.mjs --paid --output /tmp/hero-attachment-paid.json
+pnpm --filter @hero-bot/discord-bot exec node --env-file-if-exists=.env tooling/evaluate-attachments.mjs --paid --guild 123456789012345678 --output /tmp/hero-attachment-paid.json
 ```
+
+Both paid tools require `DATABASE_URL` and `HERO_AI_BUDGET_JSON` with the selected
+`--guild`; use the same database and policy as moderation to share its daily limits.
+The image/file demonstration consumes the same guild/shared allowance as judgments,
+translations and retries. Unknown usage retains capacity. See daily budgets below.
 
 The report records fixture hashes/input, prompt snapshot/hash, adapter/model,
 commit, expected recommendation/URLs and actual validated result or sanitized
@@ -716,5 +721,7 @@ selection are documented in [evaluations/README.md](../evaluations/README.md).
 These reports assess original evidence and record English audit results separately.
 Controlled outputs prove plumbing only; live model quality/readability and Discord
 observations remain unverified until the developer performs #40. The runner never
-connects to Discord or changes the saved runtime policy. #37 owns durable budgeting;
-the standalone paid tool's accounting limitation is explicit in those instructions.
+connects to Discord or changes the saved runtime policy. Both paid tools use the
+same durable budget admission/settlement as moderation; `--guild` explicitly selects
+the configured allowance for synthetic evidence. Offline subprocess coverage and
+expected accounting outcomes are included in those instructions.

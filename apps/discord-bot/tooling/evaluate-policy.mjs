@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { open, readFile, unlink } from "node:fs/promises";
 import { ConfigProvider, Effect, Layer } from "effect";
-import { openAITextLive } from "../dist/adapters/ai.js";
 import {
   judgmentInstructions,
   parseJudgment,
@@ -13,6 +12,7 @@ import {
   TextGeneration,
   TextGenerationUnavailable,
 } from "../dist/capabilities/text-generation/contract.js";
+import { paidTextLayer } from "./paid-ai.mjs";
 
 const hash = (s) => createHash("sha256").update(s).digest("hex");
 const args = process.argv.slice(2);
@@ -92,6 +92,9 @@ async function compare(output) {
 
 async function evaluate(output) {
   const paid = args.includes("--paid");
+  const guildId = option("--guild");
+  if (paid && !/^[1-9]\d*$/u.test(guildId ?? ""))
+    throw Error("Paid runs require --guild <configured-guild-id>");
   const spendContext = option("--spend-context");
   if (
     paid &&
@@ -135,8 +138,9 @@ async function evaluate(output) {
     translations: "retained actionable or retained edit evidence only",
     spendContext: paid ? spendContext : null,
     accounting: paid
-      ? "adapter attempt usage; durable shared accounting unverified until #37 integration; unknown usage is not free"
+      ? "runtime PostgreSQL ai_budget_attempts ledger; shared and per-guild admission/settlement; unknown usage retains capacity"
       : "no paid calls",
+    ...(paid ? { budgetGuildId: guildId, budgetTimezone: "UTC" } : {}),
   };
   const controlled = Layer.succeed(TextGeneration, {
     generate: (input, _system, context) =>
@@ -230,8 +234,15 @@ async function evaluate(output) {
               return { failure: "invalid-output" };
             }
           }),
-          Effect.catch(() =>
-            Effect.succeed({ failure: "provider-unavailable" }),
+          Effect.catch((error) =>
+            Effect.succeed({
+              failure:
+                error.operation === "budget"
+                  ? "budget-exhausted"
+                  : error.operation === "accounting"
+                    ? "accounting-unavailable"
+                    : "provider-unavailable",
+            }),
           ),
         );
       let translation = {
@@ -285,19 +296,18 @@ async function evaluate(output) {
     program.pipe(
       Effect.provide(
         paid
-          ? openAITextLive({
-              modelId: "gpt-6-luna",
-              afterAttempt: (e) =>
-                Effect.sync(() => {
-                  attempts.push({
-                    purpose: e.purpose,
-                    attempt: e.attempt,
-                    outcome: e.outcome,
-                    inputTokens: e.inputTokens ?? null,
-                    outputTokens: e.outputTokens ?? null,
-                  });
-                }),
-            })
+          ? paidTextLayer(guildId, (e) =>
+              Effect.sync(() => {
+                attempts.push({
+                  guildId: e.guildId,
+                  purpose: e.purpose,
+                  attempt: e.attempt,
+                  outcome: e.outcome,
+                  inputTokens: e.inputTokens ?? null,
+                  outputTokens: e.outputTokens ?? null,
+                });
+              }),
+            )
           : controlled,
       ),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv())),

@@ -101,8 +101,9 @@ in comparison metadata. The runtime saved policy is not edited by an evaluation.
 
 ## Explicit paid run and spend context
 
-CI and ordinary commands never spend. A paid invocation requires **both** `--paid`
-and `--spend-context` with a non-secret approval/accounting reference. Use `--case`
+CI and ordinary commands never spend. A paid invocation requires `--paid`,
+`--spend-context` with a non-secret approval/accounting reference, and
+`--guild <configured-guild-id>` to select the budget charged for synthetic evidence. Use `--case`
 first: each selected case makes one original judgment invocation, up to three
 transport attempts, plus at most one selected retained-English audit invocation
 (up to three attempts). Full-suite spend varies with responses and token usage;
@@ -110,22 +111,32 @@ images/PDF can cost more than text. No fixed cost or free-failure claim is made.
 The report records sanitized per-attempt outcome and reported tokens; missing usage
 is unknown. No raw provider errors, prompts or ordinary content are logged.
 
-#37 owns pricing, reservation and durable shared/per-server accounting. This standalone
-operator tool currently uses the existing transport observation hooks, not the running
-bot's durable budget ledger. It **does not enforce an evaluation spend ceiling** or
-pretend an approval reference is one. Before spending, the operator must choose a
-provider-side cap and review current pricing/available funds; use an isolated provider
-project/key. Integrate #37's public accounting path once available rather than adding
-a second ledger here. Do not put keys, prices assumed to be current, or raw billing
-exports into committed fixtures/reports.
+Both paid tools use the same `HERO_AI_BUDGET_JSON`, `DATABASE_URL` and durable
+`ai_budget_attempts` table as moderation. Every judgment, translation and retry
+reserves capacity before transport and settles supplied usage. Unknown usage keeps
+its reservation across process restarts. Synthetic fixture guild identities never
+choose the billing scope: `--guild` must identify a guild configured in the budget
+policy. Paid evaluations consume that guild's allowance and the shared application
+ceiling, including when moderation runs concurrently. There is no separate evaluation
+allowance. Missing/malformed configuration or an unconfigured guild prevents paid
+execution. Exhaustion records `budget-exhausted`; a denied translation leaves the
+valid original recommendation with an unavailable audit translation.
+
+Follow [daily budget configuration](../docs/moderation-intake.md#daily-ai-budgets-37):
+verify conservative provider pricing and full model input bounds, use the same policy
+across processes, and retain the ledger. Reported amounts are estimates, not invoices;
+unknown usage is never assumed free. A spend reference records authorization context
+and does not grant extra capacity. Use a separate development database/provider key
+from production. Do not commit keys or raw billing exports.
 
 From `apps/discord-bot`, with authorized provider configuration in ignored `.env`:
 
 ```sh
-node --env-file-if-exists=.env tooling/evaluate-policy.mjs --paid --case bare-bilibili --spend-context QA40-approved-run-1 --output /tmp/policy-paid-1.json
+node --env-file-if-exists=.env tooling/evaluate-policy.mjs --paid --guild 123456789012345678 --case bare-bilibili --spend-context QA40-approved-run-1 --output /tmp/policy-paid-1.json
 ```
 
-Requires `HERO_AI_API_KEY` and `HERO_AI_MODEL=gpt-6-luna`. A missing/invalid
+Requires `HERO_AI_API_KEY`, `HERO_AI_MODEL=gpt-6-luna`, `DATABASE_URL` and
+`HERO_AI_BUDGET_JSON` containing the selected guild. A missing/invalid
 configuration produces a sanitized unavailable report, not proof of model behavior.
 No paid run was performed for this delivery. Actual quality and readability remain
 unverified; final live QA is [#40](https://github.com/rafaeltab/hero-bot/issues/40).
@@ -139,8 +150,9 @@ Latest complete retained artifacts: [controlled suite](reports/policy/issue-38/c
 returns expected outcomes: zero action differences is not observed model success.
 Observed adapter/quality limitations: signature checks are not decoding/OCR; live
 format acceptance is unverified; short Chinese language selection is omitted;
-controlled translation is canned; SDK model revision is unavailable; standalone
-paid accounting integration awaits #37. These are explicit follow-up checks for #40,
+controlled translation is canned; SDK model revision is unavailable. Durable paid
+accounting is verified with controlled HTTP and real disposable PostgreSQL, without
+spending or claiming live provider prices/model bounds. These are explicit follow-up checks for #40,
 not silent policy changes or invented observed quality defects. If live observations
 show a concrete defect, record case/report hashes, original/actual and reason/meaning
 deviation, then file a specific follow-up; do not change expectations to hide it.
@@ -165,3 +177,19 @@ what actually happened, reason rubric deviations, translation meaning, omissions
 report links in #40; no deterministic wording expectation. Synthetic attachments can
 be reused without exposing member content. The agent does not remove live sources,
 change permissions, punish members or submit Discord messages as part of this runner.
+
+Paid-tool accounting can be reproduced offline after `make infra-start` and `pnpm build`:
+
+```sh
+node --test scripts/test/paid-evaluation.test.mjs
+```
+
+The subprocess tests intercept every provider request and use a disposable PostgreSQL
+schema. With controlled 60-unit reservations and 20-unit known settlements, policy
+judgment and translation cost 40; the next judgment costs 20 and its translation is
+blocked by the 100-unit guild ceiling. The image/PDF tool is also blocked for that
+guild, while two calls in another guild reach 100 shared reported units. A new guild
+is then denied by the 150-unit shared ceiling before transport. Another test retains
+an unknown 60-unit hold across process restarts and blocks missing/unconfigured
+budget settings without provider requests. Fixture HTTP interception is mandatory in
+these tests; the commands never contact a live provider.

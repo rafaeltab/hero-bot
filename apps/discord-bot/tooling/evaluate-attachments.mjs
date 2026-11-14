@@ -2,22 +2,26 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { ConfigProvider, Effect } from "effect";
-import { openAITextLive } from "../dist/adapters/ai.js";
 import {
   judgmentInstructions,
   parseJudgment,
 } from "../dist/capabilities/moderation/judgment.js";
 import { initialPolicy } from "../dist/capabilities/moderation/policy.js";
 import { TextGeneration } from "../dist/capabilities/text-generation/contract.js";
+import { paidTextLayer } from "./paid-ai.mjs";
 
 const output = process.argv[process.argv.indexOf("--output") + 1];
+const guildId = process.argv.includes("--guild")
+  ? process.argv[process.argv.indexOf("--guild") + 1]
+  : undefined;
 if (
   !process.argv.includes("--paid") ||
   !process.argv.includes("--output") ||
-  !output
+  !output ||
+  !/^[1-9]\d*$/u.test(guildId ?? "")
 )
   throw Error(
-    "Use --paid --output <private-report.json>; one paid judgment invocation, no Discord access.",
+    "Use --paid --guild <configured-guild-id> --output <private-report.json>; requires HERO_AI_BUDGET_JSON and DATABASE_URL, no Discord access.",
   );
 const system = `${judgmentInstructions}\n${initialPolicy}`;
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -53,18 +57,29 @@ const input = JSON.stringify({
 const result = await Effect.runPromise(
   Effect.gen(function* () {
     const ai = yield* TextGeneration;
-    return yield* ai.generate(input, system, undefined, contents).pipe(
-      Effect.map((raw) => {
-        try {
-          return { actual: parseJudgment(raw) };
-        } catch {
-          return { failure: "invalid-output" };
-        }
-      }),
-      Effect.catch(() => Effect.succeed({ failure: "provider-unavailable" })),
-    );
+    return yield* ai
+      .generate(input, system, { guildId, purpose: "judgment" }, contents)
+      .pipe(
+        Effect.map((raw) => {
+          try {
+            return { actual: parseJudgment(raw) };
+          } catch {
+            return { failure: "invalid-output" };
+          }
+        }),
+        Effect.catch((error) =>
+          Effect.succeed({
+            failure:
+              error.operation === "budget"
+                ? "budget-exhausted"
+                : error.operation === "accounting"
+                  ? "accounting-unavailable"
+                  : "provider-unavailable",
+          }),
+        ),
+      );
   }).pipe(
-    Effect.provide(openAITextLive({ modelId: "gpt-6-luna" })),
+    Effect.provide(paidTextLayer(guildId)),
     Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv())),
   ),
 );
@@ -81,7 +96,14 @@ await writeFile(
       model: "gpt-6-luna",
       provider: "openai/chat",
       adapter: { ai: "7.0.163", openai: "4.0.109" },
-      configuration: { maxRetries: 0, tools: false },
+      configuration: {
+        sdkRetries: 0,
+        maximumTransportAttempts: 3,
+        tools: false,
+        budgetGuildId: guildId,
+        accounting:
+          "runtime PostgreSQL ai_budget_attempts ledger; unknown usage retains capacity",
+      },
       prompt: system,
       promptHash: hash(system),
       input,
