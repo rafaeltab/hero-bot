@@ -43,6 +43,11 @@ const scenario = (
     usable?: boolean;
     prompt?: string;
     problems?: string[];
+    downloads?: string[];
+    suppliedContents?: unknown[];
+    attachmentBytes?: Uint8Array;
+    downloadError?: string;
+    noAcquisition?: boolean;
   } = {},
 ) => {
   const records: RecordEntry[] = [];
@@ -133,6 +138,22 @@ const scenario = (
             ),
         }),
         Layer.succeed(Reports, {
+          ...(options.noAcquisition
+            ? {}
+            : {
+                attachments: () => ({
+                  acquire: async (url) => {
+                    options.downloads?.push(url);
+                    if (options.downloadError)
+                      throw Error(options.downloadError);
+                    return (
+                      options.attachmentBytes ??
+                      new TextEncoder().encode("%PDF-1.4\n%%EOF")
+                    );
+                  },
+                }),
+              }),
+
           refresh: (d) => Effect.succeed(d),
           publish: (r) =>
             options.fault === "publish"
@@ -173,13 +194,14 @@ const scenario = (
           Layer.succeed(TextGeneration, {
             generate:
               options.generate ??
-              ((p) =>
+              ((p, _system, _context, contents) =>
                 options.fault === "ai"
                   ? Effect.fail(
                       new TextGenerationUnavailable({ operation: "generate" }),
                     )
                   : Effect.sync(() => {
                       inputs.push(p);
+                      options.suppliedContents?.push(...(contents ?? []));
                       return (
                         options.judge?.(p) ??
                         (p.includes("authorized")
@@ -690,6 +712,164 @@ it.effect(
         },
       },
     ),
+);
+
+it.effect(
+  "supplies PDF original contents once and retains truthful metadata without blobs",
+  () => {
+    const downloads: string[] = [];
+    const contents: unknown[] = [];
+    const attachment = {
+      id: "a",
+      filename: "lesson.pdf",
+      content_type: "application/pdf",
+      size: 14,
+      url: "https://cdn.discordapp.com/attachments/1/lesson.pdf",
+    };
+    return scenario(
+      (i, records, reports, inputs) =>
+        Effect.gen(function* () {
+          expect(
+            yield* i.receive({ ...evidence, attachments: [attachment] }),
+          ).toBe("reported");
+          expect(downloads).toEqual([attachment.url]);
+          expect(contents).toEqual([
+            {
+              filename: "lesson.pdf",
+              mediaType: "application/pdf",
+              data: new TextEncoder().encode("%PDF-1.4\n%%EOF"),
+            },
+          ]);
+          expect(records[0]?.evidence.attachmentInputs).toEqual([
+            {
+              index: 0,
+              attachmentId: "a",
+              filename: "lesson.pdf",
+              status: "supplied",
+              mediaType: "application/pdf",
+              bytes: 14,
+            },
+          ]);
+          expect(inputs[0]).toContain('"status":"supplied"');
+          expect(JSON.stringify(records)).not.toContain("%%EOF");
+          expect(reports).toEqual(records);
+        }),
+      { downloads, suppliedContents: contents },
+    );
+  },
+);
+
+it.effect.each([
+  { metadata: null, reason: "malformed-metadata" },
+  { metadata: { filename: "x" }, reason: "malformed-metadata" },
+  {
+    metadata: { filename: "x", url: "url", size: 14 },
+    reason: "unsupported-format",
+  },
+  {
+    metadata: {
+      filename: "x",
+      url: "url",
+      size: 14,
+      content_type: "video/mp4",
+    },
+    reason: "unsupported-format",
+  },
+  {
+    metadata: {
+      filename: "x",
+      url: "url",
+      size: 14,
+      content_type: "application/pdf",
+    },
+    reason: "acquisition-unavailable",
+    noAcquisition: true,
+  },
+  {
+    metadata: {
+      filename: "x",
+      url: "url",
+      size: 14,
+      content_type: "application/pdf",
+    },
+    reason: "download-budget",
+    downloadError: "download-budget",
+  },
+  {
+    metadata: {
+      filename: "x",
+      url: "url",
+      size: 14,
+      content_type: "application/pdf",
+    },
+    reason: "download-unavailable",
+    downloadError: "secret details",
+  },
+  {
+    metadata: {
+      filename: "x",
+      url: "url",
+      size: 50,
+      content_type: "application/pdf",
+    },
+    reason: "size-mismatch-or-truncated",
+  },
+  {
+    metadata: {
+      filename: "x",
+      url: "url",
+      size: 3,
+      content_type: "application/pdf",
+    },
+    reason: "unreadable-or-format-mismatch",
+    attachmentBytes: new Uint8Array([1, 2, 3]),
+  },
+])("judgment reports unavailable attachment accurately: $reason", (c) =>
+  scenario(
+    (i, records) =>
+      Effect.gen(function* () {
+        expect(
+          yield* i.receive({ ...evidence, attachments: [c.metadata] }),
+        ).toBe("reported");
+        expect(records[0]?.evidence.attachmentInputs).toMatchObject([
+          { index: 0, status: "unavailable", reason: c.reason },
+        ]);
+        expect(JSON.stringify(records)).not.toContain("secret details");
+      }),
+    c,
+  ),
+);
+
+it.effect(
+  "omits the fifth AI content explicitly without omitting source metadata",
+  () => {
+    const contents: unknown[] = [];
+    return scenario(
+      (i, records) =>
+        Effect.gen(function* () {
+          const attachments = Array.from({ length: 5 }, (_, n) => ({
+            id: String(n),
+            filename: "x.pdf",
+            content_type: "application/pdf",
+            size: 14,
+            url: String(n),
+          }));
+          expect(yield* i.receive({ ...evidence, attachments })).toBe(
+            "reported",
+          );
+          expect(contents).toHaveLength(4);
+          expect(records[0]?.evidence.attachments).toEqual(attachments);
+          expect(records[0]?.evidence.attachmentInputs?.[4]).toEqual({
+            index: 4,
+            attachmentId: "4",
+            filename: "x.pdf",
+            status: "unavailable",
+            reason: "content-limit",
+          });
+        }),
+      { suppliedContents: contents },
+    );
+  },
 );
 
 it.effect(

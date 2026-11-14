@@ -78,7 +78,7 @@ export const handleMessageCreation = (
         ...(foreignQuote
           ? ["Quoted content omitted: foreign-server/channel reference."]
           : []),
-        "Attachment AI contents: unavailable; metadata only. Actionable originals are copied separately with explicit preservation status.",
+        "Attachment AI availability is recorded per input; supplied bytes do not guarantee readability. Actionable originals are copied separately with explicit preservation status.",
         "English audit translation: unavailable; original evidence retained.",
       ],
     });

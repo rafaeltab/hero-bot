@@ -1,5 +1,6 @@
 import { Console, Effect, Layer } from "effect";
 import { TextGeneration } from "../text-generation/contract.ts";
+import { attachmentInputs } from "./attachment-inputs.ts";
 import {
   type FailureStage,
   Intake,
@@ -120,16 +121,28 @@ export const IntakeLive = Layer.effect(
           if (!(yield* store.claim(e))) return "duplicate" as const;
           stage = "evidence";
           const source = { ...e, currentRoles: a.actorRoles };
-          const supplied =
+          const contextual =
             context._tag === "Some"
               ? yield* context.value.acquire(source)
               : source;
+          const acquisition = reports.attachments?.();
+          const selected = yield* attachmentInputs(
+            contextual.attachments,
+            acquisition,
+          );
+          const supplied = {
+            ...contextual,
+            ...(selected.inputs.length
+              ? { attachmentInputs: selected.inputs }
+              : {}),
+          };
           const systemPrompt = `${judgmentInstructions}\n${config.prompt}`;
           stage = "judgment";
           const raw = yield* ai.generate(
             JSON.stringify(supplied),
             systemPrompt,
             { guildId: e.guildId, purpose: "judgment" },
+            selected.contents,
           );
           const judgment = yield* Effect.try({
             try: () => parseJudgment(raw),
@@ -223,7 +236,7 @@ export const IntakeLive = Layer.effect(
               const published = yield* reports.publish(
                 record,
                 (progress) => store.delivered(e, progress),
-                undefined,
+                acquisition,
                 {
                   delivery,
                   auditChannel: channel,

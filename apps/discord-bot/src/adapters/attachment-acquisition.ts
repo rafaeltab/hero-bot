@@ -1,4 +1,4 @@
-/** One session per judgment. Both future AI selection and evidence copying must share
+/** One session per judgment. Both AI selection and evidence copying must share
  * this cache/budget; selection limits never imply preservation completeness. */
 export const createAttachmentSession = (transport: typeof fetch) => {
   let remaining = 20 * 1024 * 1024;

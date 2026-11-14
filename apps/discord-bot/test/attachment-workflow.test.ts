@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { expect, it } from "@effect/vitest";
 import { DiscordConfig, DiscordRESTMemoryLive } from "dfx";
-import { Effect, Layer, Redacted } from "effect";
+import { ConfigProvider, Effect, Layer, Redacted } from "effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import { openAITextLive } from "../src/adapters/ai.ts";
 import { createReportsDiscordLayer } from "../src/adapters/intake-discord.ts";
 import { intakePostgresLayer } from "../src/adapters/intake-postgres.ts";
 import { Intake } from "../src/capabilities/moderation/contract.ts";
@@ -12,7 +14,7 @@ import {
   GuildAccess,
   IntakeStore,
 } from "../src/capabilities/moderation/ports.ts";
-import { TextGeneration } from "../src/capabilities/text-generation/contract.ts";
+
 import {
   configurationDatabase,
   databaseConfig,
@@ -31,6 +33,29 @@ const scenario = (fault: string, expected: string, status: string) =>
       const table = yield* configurationDatabase;
       let downloads = 0;
       const requests: string[] = [];
+      const providerBodies: {
+        messages: { role: string; content: unknown }[];
+      }[] = [];
+      const format = fault.startsWith("ai-") ? fault.slice(3) : "pdf";
+      const supported =
+        fault.startsWith("ai-") ||
+        ["none-pdf", "five", "budget", "rejection"].includes(fault);
+      const fixture = readFileSync(
+        new URL(
+          `../../../evaluations/fixtures/attachments/distribution.${format}`,
+          import.meta.url,
+        ),
+      );
+      const original =
+        fault === "budget" ? new Uint8Array(15 * 1024 * 1024) : fixture;
+      if (fault === "budget") original.set(fixture);
+      const mediaType =
+        format === "pdf"
+          ? "application/pdf"
+          : format === "jpg"
+            ? "image/jpeg"
+            : `image/${format}`;
+      const originals: Blob[] = [];
       const transport: typeof fetch = async () => {
         downloads++;
         if (fault === "download")
@@ -46,7 +71,7 @@ const scenario = (fault: string, expected: string, status: string) =>
               },
             }),
           );
-        return new Response("hello");
+        return new Response(supported ? original : "hello");
       };
       const reports = createReportsDiscordLayer(transport).pipe(
         Layer.provide(DiscordRESTMemoryLive),
@@ -57,6 +82,8 @@ const scenario = (fault: string, expected: string, status: string) =>
             HttpClient.make((request) => {
               requests.push(`${request.method} ${request.url}`);
               const upload = request.body._tag === "FormData";
+              if (request.body._tag === "FormData")
+                originals.push(request.body.formData.get("files[0]") as Blob);
               const failed =
                 (upload && fault === "upload") ||
                 (request.url.endsWith("/threads") && fault === "thread");
@@ -111,53 +138,183 @@ const scenario = (fault: string, expected: string, status: string) =>
               problems: [],
             }),
         }),
-        Layer.succeed(TextGeneration, {
-          generate: () =>
-            Effect.succeed(
-              JSON.stringify({
-                action: fault === "none" ? "none" : "ban",
-                reason: "Platform presumption.",
-                offendingUrls: [],
+        openAITextLive({
+          modelId: "gpt-6-luna",
+          fetch: async (_url, init) => {
+            providerBodies.push(JSON.parse(String(init?.body)));
+            if (fault === "rejection")
+              return Response.json(
+                { error: { message: "secret provider diagnostics" } },
+                { status: 400 },
+              );
+            return Response.json({
+              id: "r",
+              object: "chat.completion",
+              created: 0,
+              model: "gpt-6-luna",
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({
+                      action: ["none", "none-pdf"].includes(fault)
+                        ? "none"
+                        : "ban",
+                      reason: "Platform presumption.",
+                      offendingUrls: [],
+                    }),
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            });
+          },
+        }).pipe(
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                HERO_AI_API_KEY: "controlled",
+                HERO_AI_MODEL: "gpt-6-luna",
               }),
             ),
-        }),
+          ),
+        ),
       );
       yield* Effect.gen(function* () {
         const intake = yield* Intake;
         const store = yield* IntakeStore;
-        const attachments =
+        let attachments: (
+          | (typeof attachment & { content_type?: string })
+          | null
+        )[] =
           fault === "invalid"
             ? [null]
             : fault === "host"
               ? [{ ...attachment, url: "https://example.com/course" }]
               : [{ ...attachment, size: fault === "oversized" ? 20971521 : 5 }];
+        if (supported) {
+          attachments = [
+            {
+              ...attachment,
+              filename: `distribution.${format}`,
+              content_type: mediaType,
+              size: original.byteLength,
+            },
+          ];
+          if (fault === "five")
+            attachments = Array.from({ length: 5 }, (_, n) => ({
+              ...attachment,
+              filename: `distribution.${format}`,
+              content_type: mediaType,
+              size: original.byteLength,
+              id: String(n),
+            }));
+          if (fault === "budget")
+            attachments.push({
+              ...attachment,
+              id: "b",
+              url: attachment.url + "?b",
+              size: 6 * 1024 * 1024,
+              content_type: "application/octet-stream",
+            });
+        }
         const e = { ...evidence, attachments };
         expect(yield* intake.receive(e)).toBe(expected);
         expect(yield* intake.receive(e)).toBe("duplicate");
         const retained = yield* store.read("10", "100");
-        const expectedRecord =
-          fault === "none"
-            ? []
-            : [
+        const expectedRecord = ["none", "none-pdf", "rejection"].includes(fault)
+          ? []
+          : [
+              {
+                record: { evidence: { attachments } },
+                delivery:
+                  fault === "thread"
+                    ? { rootId: "root", threadId: "", state: "partial" }
+                    : {
+                        state: expected === "reported" ? "complete" : "partial",
+                        attachments: [
+                          {
+                            status,
+                            sourceMessageId: "100",
+                            sourceVersion: evidence.version,
+                          },
+                        ],
+                      },
+              },
+            ];
+        const specialRecord =
+          fault === "five"
+            ? [
                 {
-                  record: { evidence: { attachments } },
-                  delivery:
-                    fault === "thread"
-                      ? { rootId: "root", threadId: "", state: "partial" }
-                      : {
-                          state:
-                            expected === "reported" ? "complete" : "partial",
-                          attachments: [
-                            {
-                              status,
-                              sourceMessageId: "100",
-                              sourceVersion: evidence.version,
-                            },
-                          ],
-                        },
+                  delivery: {
+                    attachments: Array.from({ length: 5 }, () => ({
+                      status: "available",
+                    })),
+                  },
+                  record: {
+                    evidence: {
+                      attachmentInputs: [
+                        { status: "supplied" },
+                        { status: "supplied" },
+                        { status: "supplied" },
+                        { status: "supplied" },
+                        { status: "unavailable", reason: "content-limit" },
+                      ],
+                    },
+                  },
                 },
-              ];
-        expect(retained).toMatchObject(expectedRecord);
+              ]
+            : fault === "budget"
+              ? [
+                  {
+                    delivery: {
+                      attachments: [
+                        { status: "available" },
+                        { status: "oversized" },
+                      ],
+                    },
+                    record: {
+                      evidence: {
+                        attachmentInputs: [
+                          { status: "supplied" },
+                          {
+                            status: "unavailable",
+                            reason: "unsupported-format",
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ]
+              : expectedRecord;
+        expect(retained).toMatchObject(specialRecord);
+        expect(providerBodies).toHaveLength(1);
+        const body = JSON.stringify(providerBodies);
+        expect(
+          body.includes(
+            "data:" +
+              mediaType +
+              ";base64," +
+              Buffer.from(original).toString("base64"),
+          ),
+        ).toBe(supported);
+        expect(body).toContain("untrusted data");
+        expect(body).not.toContain('"tools"');
+        expect(body).not.toContain('"image_url":{"url":"https:');
+        expect(JSON.stringify(retained)).not.toContain(
+          Buffer.from(fixture).toString("base64"),
+        );
+        const copiedBytes = yield* Effect.promise(() =>
+          Promise.all(
+            originals
+              .filter(() => fault.startsWith("ai-"))
+              .map(async (b) => new Uint8Array(await b.arrayBuffer())),
+          ),
+        );
+        expect(copiedBytes).toEqual(
+          fault.startsWith("ai-") ? [new Uint8Array(fixture)] : [],
+        );
         expect(downloads).toBe(
           ["none", "thread", "invalid", "host", "oversized"].includes(fault)
             ? 0
@@ -220,4 +377,23 @@ it.effect("failed thread retains the partial report root identity", () =>
 );
 it.effect("ordinary none messages never download or retain attachments", () =>
   scenario("none", "none", "pending"),
+);
+
+it.effect.each(["png", "jpg", "gif", "webp", "pdf"])(
+  "original %s bytes reach installed provider and private copy once without PostgreSQL blobs",
+  (format) => scenario("ai-" + format, "reported", "available"),
+);
+it.effect(
+  "AI inspects a harmless PDF transiently without archiving ordinary contents",
+  () => scenario("none-pdf", "none", "pending"),
+);
+it.effect("four AI contents and five private originals remain distinct", () =>
+  scenario("five", "reported", "available"),
+);
+it.effect("AI and preservation cannot spend separate download budgets", () =>
+  scenario("budget", "failed", "oversized"),
+);
+it.effect(
+  "provider attachment rejection is a service failure without a member finding",
+  () => scenario("rejection", "failed", "pending"),
 );

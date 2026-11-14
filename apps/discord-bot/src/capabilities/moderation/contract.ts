@@ -70,7 +70,18 @@ export type ConversationMessage = {
   embeds: unknown[];
   replyReference: unknown;
 };
+export type AttachmentInput = {
+  index: number;
+  attachmentId: string | null;
+  filename: string | null;
+  status: "supplied" | "unavailable";
+  reason?: string;
+  mediaType?: string;
+  bytes?: number;
+};
 export type Evidence = {
+  /** Supplied means sent to provider, not proof of interpretation. */
+  attachmentInputs?: AttachmentInput[];
   guildId: string;
   messageId: string;
   version: string;
@@ -172,7 +183,7 @@ export type ServiceHealth = {
 /** Versioned notification workflow. Claims are content-free and durable: failed or
  * interrupted claims are not replayed. Never deletes, bans, or changes member roles.
  * Exact creations/edits share one report; uncertain delivery blocks updates.
- * Actionable attachments are copied privately; AI attachment contents remain unavailable. No missed-event replay. */
+ * Actionable attachments are copied privately; Supported original image/PDF contents are supplied transiently. No missed-event replay. */
 export class Intake extends Context.Service<
   Intake,
   {

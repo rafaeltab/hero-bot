@@ -94,6 +94,9 @@ export type AttachmentSession = {
 export class Reports extends Context.Service<
   Reports,
   {
+    /** Construct exactly one shared session before judgment; no network until acquire.
+     * Absent on text-only adapters: attachment contents are explicitly unavailable. */
+    attachments?: () => AttachmentSession;
     /** Recheck copied-message identities, never source URLs; persist the returned snapshot. */
     refresh: (
       delivery: Delivery,

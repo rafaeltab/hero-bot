@@ -2,6 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { APICallError, generateText } from "ai";
 import { Config, Effect, Layer } from "effect";
 import {
+  type AttachmentContent,
   type InvocationAttempt,
   type InvocationContext,
   TextGeneration,
@@ -54,6 +55,7 @@ export const openAITextLive = (
         system: string | undefined,
         context: InvocationContext | undefined,
         number: number,
+        contents: readonly AttachmentContent[],
       ) =>
         Effect.scoped(
           Effect.gen(function* () {
@@ -64,7 +66,27 @@ export const openAITextLive = (
               Effect.sync(() =>
                 generateText({
                   model,
-                  prompt,
+                  ...(contents.length === 0
+                    ? { prompt }
+                    : {
+                        messages: [
+                          {
+                            role: "user" as const,
+                            content: [
+                              { type: "text" as const, text: prompt },
+                              ...contents.map((c) => {
+                                return {
+                                  type: "file" as const,
+                                  data: c.data,
+                                  mediaType: c.mediaType,
+                                  filename: c.filename,
+                                };
+                              }),
+                            ],
+                          },
+                        ],
+                      }),
+
                   ...(system === undefined ? {} : { system }),
                   maxRetries: 0,
                   abortSignal: controller.signal,
@@ -107,11 +129,11 @@ export const openAITextLive = (
           }),
         );
       return TextGeneration.of({
-        generate: (prompt, system, context) => {
+        generate: (prompt, system, context, contents = []) => {
           const run = (
             number: number,
           ): Effect.Effect<string, TextGenerationUnavailable> =>
-            attempt(prompt, system, context, number).pipe(
+            attempt(prompt, system, context, number, contents).pipe(
               Effect.catch((error) =>
                 Effect.gen(function* () {
                   if (

@@ -470,3 +470,154 @@ it.live(
       ]);
     }),
 );
+
+it.effect(
+  "supplies original image and PDF bytes through the installed chat adapter",
+  () =>
+    Effect.gen(function* () {
+      const bodies: unknown[] = [];
+      const result = yield* Effect.gen(function* () {
+        const ai = yield* TextGeneration;
+        return yield* ai.generate("Evidence metadata", "Policy", undefined, [
+          {
+            filename: "screen.png",
+            mediaType: "image/png",
+            data: new Uint8Array([137, 80, 78, 71]),
+          },
+          {
+            filename: "lesson.pdf",
+            mediaType: "application/pdf",
+            data: new TextEncoder().encode("%PDF-1.4"),
+          },
+        ]);
+      }).pipe(
+        Effect.provide(
+          openAITextLive({
+            fetch: async (_url, init) => {
+              bodies.push(JSON.parse(String(init?.body)));
+              return Response.json({
+                id: "r",
+                object: "chat.completion",
+                created: 0,
+                model: "controlled-model",
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: "assistant", content: "Judgment" },
+                    finish_reason: "stop",
+                  },
+                ],
+              });
+            },
+          }),
+        ),
+        Effect.provide(configuration),
+      );
+      expect(result).toBe("Judgment");
+      expect(bodies).toEqual([
+        {
+          model: "controlled-model",
+          messages: [
+            { role: "system", content: "Policy" },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Evidence metadata" },
+                {
+                  type: "image_url",
+                  image_url: { url: "data:image/png;base64,iVBORw==" },
+                },
+                {
+                  type: "file",
+                  file: {
+                    filename: "lesson.pdf",
+                    file_data: "data:application/pdf;base64,JVBERi0xLjQ=",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+    }),
+);
+
+it.live(
+  "attachment retry preserves original bytes and server accounting on each paid attempt",
+  () =>
+    Effect.gen(function* () {
+      const bodies: unknown[] = [];
+      const attempts: unknown[] = [];
+      const result = yield* Effect.gen(function* () {
+        const ai = yield* TextGeneration;
+        return yield* ai.generate(
+          "Evidence",
+          "Policy",
+          { guildId: "10", purpose: "judgment" },
+          [
+            {
+              filename: "x.pdf",
+              mediaType: "application/pdf",
+              data: new TextEncoder().encode("%PDF-1.4"),
+            },
+          ],
+        );
+      }).pipe(
+        Effect.provide(
+          openAITextLive({
+            beforeAttempt: (e) =>
+              Effect.sync(() => {
+                attempts.push(e);
+              }),
+            fetch: async (_url, init) => {
+              bodies.push(JSON.parse(String(init?.body)));
+              if (bodies.length === 1)
+                return Response.json(
+                  { error: { message: "private", type: "rate_limit_error" } },
+                  { status: 429, headers: { "retry-after-ms": "0" } },
+                );
+              return Response.json({
+                id: "r",
+                object: "chat.completion",
+                created: 0,
+                model: "controlled-model",
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: "assistant", content: "Judgment" },
+                    finish_reason: "stop",
+                  },
+                ],
+              });
+            },
+          }),
+        ),
+        Effect.provide(configuration),
+      );
+      expect(result).toBe("Judgment");
+      const expectedBody = {
+        model: "controlled-model",
+        messages: [
+          { role: "system", content: "Policy" },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Evidence" },
+              {
+                type: "file",
+                file: {
+                  filename: "x.pdf",
+                  file_data: "data:application/pdf;base64,JVBERi0xLjQ=",
+                },
+              },
+            ],
+          },
+        ],
+      };
+      expect(bodies).toEqual([expectedBody, expectedBody]);
+      expect(attempts).toEqual([
+        { guildId: "10", purpose: "judgment", attempt: 1 },
+        { guildId: "10", purpose: "judgment", attempt: 2 },
+      ]);
+    }),
+);
