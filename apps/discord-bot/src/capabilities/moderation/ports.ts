@@ -49,7 +49,16 @@ export class ConfigurationStore extends Context.Service<
   }
 >()("hero-bot/ConfigurationStore") {}
 
-export type VersionProgress = { version: string; state: string };
+/** Legacy content-free rows remain uncertain and are never replayed. */
+export type IntakeState =
+  | "legacy"
+  | "claimed"
+  | "actionable"
+  | "harmless"
+  | "assessed"
+  | "delivering"
+  | "delivered";
+export type VersionProgress = { version: string; state: IntakeState };
 export type ReportUpdate = {
   auditChannel?: string | null;
   delivery: Delivery | null;
@@ -76,7 +85,12 @@ export class IntakeStore extends Context.Service<
     progress: (
       e: Evidence,
     ) => Effect.Effect<VersionProgress[], ModerationUnavailable>;
-    assessed: (e: Evidence) => Effect.Effect<void, ModerationUnavailable>;
+    /** Content-free decision before retention/translation; default marks final assessment.
+     * A claimed/legacy older version is uncertain, never evidence of harmlessness. */
+    assessed: (
+      e: Evidence,
+      state?: Extract<IntakeState, "actionable" | "harmless" | "assessed">,
+    ) => Effect.Effect<void, ModerationUnavailable>;
     delivering: (e: Evidence) => Effect.Effect<void, ModerationUnavailable>;
     claim: (
       e: Pick<Evidence, "guildId" | "messageId" | "version">,

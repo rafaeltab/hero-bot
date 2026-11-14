@@ -115,7 +115,14 @@ export const handleMessageUpdate = (
       return;
     }
     const rest = yield* DiscordREST;
-    const message = yield* rest.getMessage(event.channel_id, event.id);
+    const message = yield* rest
+      .getMessage(event.channel_id, event.id)
+      .pipe(
+        Effect.catch(() =>
+          eventFailure(event.guild_id).pipe(Effect.map(() => undefined)),
+        ),
+      );
+    if (!message) return;
     if (
       message.id !== event.id ||
       message.channel_id !== event.channel_id ||

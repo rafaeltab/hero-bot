@@ -8,7 +8,10 @@ import type {
   RecordEntry,
 } from "../capabilities/moderation/contract.ts";
 import { ModerationUnavailable } from "../capabilities/moderation/contract.ts";
-import { IntakeStore } from "../capabilities/moderation/ports.ts";
+import {
+  type IntakeState,
+  IntakeStore,
+} from "../capabilities/moderation/ports.ts";
 /** Content-free durable claims deliberately do not replay after failures/restarts. */
 export const intakePostgresLayer = (table = "moderation_intake") =>
   Layer.effect(
@@ -75,7 +78,7 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
       );
       const state = (
         e: { guildId: string; messageId: string; version: string },
-        value: string,
+        value: IntakeState,
       ) =>
         query(async () => {
           await db.execute(
@@ -165,9 +168,22 @@ export const intakePostgresLayer = (table = "moderation_intake") =>
             const result = await db.execute<{ version: string; state: string }>(
               sql`select version,state from ${t} where guild_id=${e.guildId} and message_id=${e.messageId} order by version::timestamptz`,
             );
-            return result.rows;
+            return result.rows.map((row) => {
+              switch (row.state) {
+                case "legacy":
+                case "claimed":
+                case "actionable":
+                case "harmless":
+                case "assessed":
+                case "delivering":
+                case "delivered":
+                  return { version: row.version, state: row.state };
+                default:
+                  throw Error();
+              }
+            });
           }),
-        assessed: (e) => state(e, "assessed"),
+        assessed: (e, value = "assessed") => state(e, value),
         delivering: (e) => state(e, "delivering"),
         claim: (e) =>
           query(async () => {

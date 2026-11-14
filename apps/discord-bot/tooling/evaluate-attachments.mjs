@@ -2,12 +2,10 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { ConfigProvider, Effect } from "effect";
-import {
-  judgmentInstructions,
-  parseJudgment,
-} from "../dist/capabilities/moderation/judgment.js";
+import { judgmentInstructions } from "../dist/capabilities/moderation/judgment.js";
 import { initialPolicy } from "../dist/capabilities/moderation/policy.js";
 import { TextGeneration } from "../dist/capabilities/text-generation/contract.js";
+import { evaluationResult } from "./evaluation-result.mjs";
 import { paidTextLayer } from "./paid-ai.mjs";
 
 const output = process.argv[process.argv.indexOf("--output") + 1];
@@ -59,25 +57,7 @@ const result = await Effect.runPromise(
     const ai = yield* TextGeneration;
     return yield* ai
       .generate(input, system, { guildId, purpose: "judgment" }, contents)
-      .pipe(
-        Effect.map((raw) => {
-          try {
-            return { actual: parseJudgment(raw) };
-          } catch {
-            return { failure: "invalid-output" };
-          }
-        }),
-        Effect.catch((error) =>
-          Effect.succeed({
-            failure:
-              error.operation === "budget"
-                ? "budget-exhausted"
-                : error.operation === "accounting"
-                  ? "accounting-unavailable"
-                  : "provider-unavailable",
-          }),
-        ),
-      );
+      .pipe(evaluationResult);
   }).pipe(
     Effect.provide(paidTextLayer(guildId)),
     Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv())),
