@@ -16,15 +16,15 @@ it("controlled policy evaluation produces comparable provenance and expected/act
     );
     const result = JSON.parse(await readFile(path, "utf8"));
     expect(result).toMatchObject({
-      formatVersion: 1,
+      formatVersion: 2,
       mode: "controlled-plumbing-only",
-      caseVersion: 2,
+      caseVersion: 3,
       model: "gpt-6-luna",
       promptHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       caseHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       commit: expect.stringMatching(/^[a-f0-9]{40}$/),
     });
-    expect(result.results).toHaveLength(20);
+    expect(result.results).toHaveLength(37);
     expect(
       JSON.parse(
         result.results.find((r: { id: string }) => r.id === "corrected-history")
