@@ -62,6 +62,9 @@ export async function runMutation(root, plan) {
     concurrency: 1,
     timeoutMS: 10000,
     timeoutFactor: 2,
+    // Keep sandbox/test at the same depth as apps/discord-bot/test so
+    // repository-relative, immutable evaluation fixtures resolve unchanged.
+    tempDirName: resolve(root, ".stryker-tmp"),
     cleanTempDir: "always",
     disableBail: true,
   }).runMutationTest();

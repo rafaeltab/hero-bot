@@ -17,6 +17,13 @@ Use a task-specific `TMPDIR` on a filesystem with available inodes when necessar
 Turbo passes it through. Verification and coverage must run sequentially in a shared
 checkout because generated artifacts can invalidate fresh coverage receipts.
 
+Stryker sandboxes live under the repository's `.stryker-tmp/`, at the same
+directory depth as `apps/discord-bot`. This preserves repository-relative paths
+to immutable evaluation fixtures in both tests and evaluation commands. App
+source is still copied and instrumented in the sandbox; the evidence fixtures
+are not mutation targets. The real execution fixture exercises these paths in
+both per-test and full-suite modes.
+
 The earlier single-job whole-PR run selected 150 mutants and exceeded its configured
 20-minute budget. CI now balances whole original changed ranges across four shards,
 retaining the same total scope, per-mutant full build/test fallback and 20-minute
