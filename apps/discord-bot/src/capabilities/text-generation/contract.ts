@@ -3,7 +3,8 @@ import { Context, Data, type Effect } from "effect";
 export class TextGenerationUnavailable extends Data.TaggedError(
   "TextGenerationUnavailable",
 )<{
-  readonly operation: "configuration" | "generate";
+  readonly guidance?: string;
+  readonly operation: "configuration" | "generate" | "budget" | "accounting";
 }> {}
 
 /** Transient original attachment content. Never persist these bytes. */
@@ -17,6 +18,7 @@ export type InvocationContext = {
   purpose: "judgment" | "translation";
 };
 export type InvocationAttempt = Partial<InvocationContext> & {
+  id?: string;
   attempt: number;
 };
 

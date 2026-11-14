@@ -1,4 +1,5 @@
 import { Console, Effect, Layer } from "effect";
+import { AiBudget } from "../ai-budget/contract.ts";
 import { TextGeneration } from "../text-generation/contract.ts";
 import { attachmentInputs } from "./attachment-inputs.ts";
 import {
@@ -25,6 +26,7 @@ export const IntakeLive = Layer.effect(
     const store = yield* IntakeStore;
     const reports = yield* Reports;
     const ai = yield* TextGeneration;
+    const budget = yield* Effect.serviceOption(AiBudget);
     const since = new Date().toISOString();
     const health = new Map<string, ServiceHealth>();
     const snapshot = (guild: string): ServiceHealth =>
@@ -81,7 +83,19 @@ export const IntakeLive = Layer.effect(
     const context = yield* Effect.serviceOption(EvidenceContext);
 
     return Intake.of({
-      status: (guild) => Effect.sync(() => structuredClone(snapshot(guild))),
+      status: (guild) =>
+        Effect.gen(function* () {
+          const health = structuredClone(snapshot(guild));
+          if (budget._tag === "Some")
+            health.budget = yield* budget.value
+              .status(guild)
+              .pipe(
+                Effect.catch(() =>
+                  Effect.succeed({ reason: "accounting-unavailable" as const }),
+                ),
+              );
+          return health;
+        }),
       reportFailure,
       recover,
       receive: (e) => {
@@ -149,6 +163,8 @@ export const IntakeLive = Layer.effect(
             catch: () => new ModerationUnavailable({ reason: "configuration" }),
           });
           yield* recover(e.guildId, "judgment");
+          yield* recover(e.guildId, "budget");
+          yield* recover(e.guildId, "accounting");
           yield* recover(e.guildId, "configuration");
           const record: RecordEntry = {
             evidence: supplied,
@@ -271,9 +287,13 @@ export const IntakeLive = Layer.effect(
             reportFailure(
               e.guildId,
               channel,
-              "reason" in error && error.reason === "database"
-                ? "database"
-                : stage,
+              "operation" in error &&
+                (error.operation === "budget" ||
+                  error.operation === "accounting")
+                ? error.operation
+                : "reason" in error && error.reason === "database"
+                  ? "database"
+                  : stage,
               true,
             ).pipe(Effect.andThen(Effect.succeed("failed" as const))),
           ),

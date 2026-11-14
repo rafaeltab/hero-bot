@@ -1,5 +1,7 @@
 import { Console, Effect, Layer } from "effect";
 import { openAITextLive } from "./adapters/ai.ts";
+import { budgetSettings } from "./adapters/budget-config.ts";
+import { budgetPostgresLayer } from "./adapters/budget-postgres.ts";
 import { discordDevelopmentLayer } from "./adapters/discord-development.ts";
 import { DiscordNodeTransport } from "./adapters/discord-node.ts";
 import { EnvironmentFromConfig } from "./adapters/environment-config.ts";
@@ -18,6 +20,7 @@ import {
   moderationSettings,
   runModerationCommands,
 } from "./adapters/moderation-runtime.ts";
+import { AiBudget } from "./capabilities/ai-budget/contract.ts";
 import {
   DiscordConnection,
   type DiscordUnavailable,
@@ -29,6 +32,7 @@ import {
   type StatusUnavailable,
 } from "./capabilities/runtime-status/contract.ts";
 import { RuntimeStatusLive } from "./capabilities/runtime-status/implementation.ts";
+import { TextGenerationUnavailable } from "./capabilities/text-generation/contract.ts";
 
 // Until external adapters are wired, a scoped timer owns the process lifetime.
 const Lifetime = Layer.effectDiscard(
@@ -75,7 +79,25 @@ export const moderationProgram = Effect.scoped(
   Effect.gen(function* () {
     const settings = yield* moderationSettings;
     const bounds = yield* contextBounds;
-    const ai = yield* Layer.build(openAITextLive({ modelId: "gpt-6-luna" }));
+    const policy = yield* budgetSettings;
+    if (settings.guildIds.some((id) => policy.guildMicroUsd[id] === undefined))
+      return yield* Effect.fail(
+        new TextGenerationUnavailable({
+          operation: "configuration",
+          guidance:
+            "Add every moderation guild to HERO_AI_BUDGET_JSON.guildMicroUsd; see docs/moderation-intake.md.",
+        }),
+      );
+    const budgetContext = yield* Layer.build(budgetPostgresLayer(policy));
+    const budget = yield* AiBudget.pipe(Effect.provide(budgetContext));
+    const ai = yield* Layer.build(
+      openAITextLive({
+        modelId: "gpt-6-luna",
+        beforeAttempt: budget.reserve,
+        afterAttempt: budget.settle,
+        maxOutputTokens: policy.maxOutputTokens,
+      }),
+    );
     const intakeStorage = yield* Layer.build(intakePostgresLayer());
     const storage = yield* Layer.build(configurationPostgresLayer());
     const discord = yield* Layer.build(moderationDiscordLayer(settings.token));
@@ -84,6 +106,7 @@ export const moderationProgram = Effect.scoped(
       settings.guildIds,
     ).pipe(Effect.provide(discord));
     const dependencies = Layer.mergeAll(
+      Layer.succeedContext(budgetContext),
       Layer.succeedContext(storage),
       Layer.succeedContext(intakeStorage),
       Layer.succeedContext(ai),

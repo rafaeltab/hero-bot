@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createOpenAI } from "@ai-sdk/openai";
 import { APICallError, generateText } from "ai";
 import { Config, Effect, Layer } from "effect";
@@ -12,9 +13,10 @@ import {
 /** Transport injection is adapter construction only; consumers see no SDK types. */
 export const openAITextLive = (
   options: {
+    readonly maxOutputTokens?: number;
     readonly fetch?: typeof globalThis.fetch;
     readonly modelId?: string;
-    /** Runs before each paid transport attempt; future budget reservation belongs here. */
+    /** Runs before each paid transport attempt; durable budget admission runs here. */
     readonly beforeAttempt?: (
       event: InvocationAttempt,
     ) => Effect.Effect<void, TextGenerationUnavailable>;
@@ -25,7 +27,7 @@ export const openAITextLive = (
         inputTokens?: number | undefined;
         outputTokens?: number | undefined;
       },
-    ) => Effect.Effect<void>;
+    ) => Effect.Effect<void, TextGenerationUnavailable>;
   } = {},
 ) =>
   Layer.effect(
@@ -59,7 +61,11 @@ export const openAITextLive = (
       ) =>
         Effect.scoped(
           Effect.gen(function* () {
-            const event = { ...context, attempt: number };
+            const event = {
+              ...context,
+              attempt: number,
+              id: randomUUID(),
+            };
             yield* options.beforeAttempt?.(event) ?? Effect.void;
             const controller = new AbortController();
             const request = yield* Effect.acquireRelease(
@@ -89,6 +95,9 @@ export const openAITextLive = (
 
                   ...(system === undefined ? {} : { system }),
                   maxRetries: 0,
+                  ...(options.maxOutputTokens === undefined
+                    ? {}
+                    : { maxOutputTokens: options.maxOutputTokens }),
                   abortSignal: controller.signal,
                 }),
               ),
@@ -107,17 +116,21 @@ export const openAITextLive = (
               catch: (error) => error,
             }).pipe(
               Effect.tapError(
-                () =>
-                  options.afterAttempt?.({ ...event, outcome: "failed" }) ??
-                  Effect.void,
+                (error) =>
+                  options.afterAttempt?.({
+                    ...event,
+                    outcome: "failed",
+                    ...failureUsage(error),
+                  }) ?? Effect.void,
               ),
-              Effect.onInterrupt(
-                () =>
+              Effect.onInterrupt(() => {
+                return (
                   options.afterAttempt?.({
                     ...event,
                     outcome: "interrupted",
-                  }) ?? Effect.void,
-              ),
+                  }) ?? Effect.void
+                ).pipe(Effect.catch(() => Effect.void));
+              }),
             );
             yield* options.afterAttempt?.({
               ...event,
@@ -136,6 +149,8 @@ export const openAITextLive = (
             attempt(prompt, system, context, number, contents).pipe(
               Effect.catch((error) =>
                 Effect.gen(function* () {
+                  if (error instanceof TextGenerationUnavailable)
+                    return yield* Effect.fail(error);
                   if (
                     number >= 3 ||
                     !APICallError.isInstance(error) ||
@@ -173,4 +188,20 @@ const retryDelay = (error: APICallError, attempt: number): number => {
     if (Number.isFinite(date)) return Math.max(0, date - Date.now());
   }
   return 250 * 2 ** (attempt - 1);
+};
+
+/** Some providers report billed usage on error responses. Never persist the body. */
+const failureUsage = (
+  error: unknown,
+): { inputTokens?: number; outputTokens?: number } => {
+  if (!APICallError.isInstance(error) || !error.responseBody) return {};
+  try {
+    const body = JSON.parse(error.responseBody);
+    return {
+      inputTokens: body.usage?.prompt_tokens,
+      outputTokens: body.usage?.completion_tokens,
+    };
+  } catch {
+    return {};
+  }
 };

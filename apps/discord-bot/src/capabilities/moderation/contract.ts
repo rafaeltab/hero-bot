@@ -1,4 +1,5 @@
 import { Context, Data, type Effect } from "effect";
+import type { BudgetStatus } from "../ai-budget/contract.ts";
 
 export type PermissionGroup = "Owner" | "Admin" | "Moderator";
 export type Permission = "configure" | "inspect-channel-status";
@@ -168,6 +169,8 @@ export type Delivery = {
   attachments?: AttachmentCopy[];
 };
 export type FailureStage =
+  | "budget"
+  | "accounting"
   | "judgment"
   | "database"
   | "evidence"
@@ -176,6 +179,7 @@ export type FailureStage =
   | "configuration";
 export type ServiceHealth = {
   /** Process-local observation window; restart is unknown, never zero historical loss. */
+  budget?: BudgetStatus | { reason: "accounting-unavailable" };
   since: string;
   missedMessages: number;
   failures: Partial<Record<FailureStage, number>>;

@@ -188,7 +188,7 @@ it.effect(
       );
       yield* Deferred.await(started);
       yield* Fiber.interrupt(fiber);
-      expect(events).toEqual(["aborted", "released"]);
+      expect(events).toMatchObject(["aborted", "released"]);
       expect(outcomes).toEqual(["interrupted"]);
     }),
 );
@@ -360,7 +360,7 @@ it.live.each([
     );
     expect(result.operation).toBe("generate");
     expect(calls).toBe(3);
-    expect(events).toEqual([
+    expect(events).toMatchObject([
       { guildId: "10", purpose: "translation", attempt: 1 },
       { guildId: "10", purpose: "translation", attempt: 1, outcome: "failed" },
       { guildId: "10", purpose: "translation", attempt: 2 },
@@ -457,7 +457,7 @@ it.live(
       );
       expect(text).toBe("allowed");
       expect(calls).toBe(2);
-      expect(events).toEqual([
+      expect(events).toMatchObject([
         { guildId: "10", purpose: "judgment", attempt: 1, outcome: "failed" },
         {
           guildId: "10",
@@ -615,7 +615,7 @@ it.live(
         ],
       };
       expect(bodies).toEqual([expectedBody, expectedBody]);
-      expect(attempts).toEqual([
+      expect(attempts).toMatchObject([
         { guildId: "10", purpose: "judgment", attempt: 1 },
         { guildId: "10", purpose: "judgment", attempt: 2 },
       ]);

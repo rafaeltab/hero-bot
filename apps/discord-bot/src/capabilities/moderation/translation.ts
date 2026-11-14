@@ -1,6 +1,9 @@
 import { Effect } from "effect";
 import { detect } from "tinyld";
-import type { TextGeneration } from "../text-generation/contract.ts";
+import {
+  type TextGeneration,
+  TextGenerationUnavailable,
+} from "../text-generation/contract.ts";
 import type { AuditTranslation, RecordEntry } from "./contract.ts";
 
 const instructions =
@@ -153,8 +156,14 @@ export const translateAudit = (
       audit.status = "available";
     } else {
       audit.status = "unavailable";
+      if (
+        result.failure instanceof TextGenerationUnavailable &&
+        result.failure.operation === "budget"
+      )
+        audit.limitation +=
+          " Daily AI budget exhausted; English translation skipped without replay.";
       audit.limitation +=
-        " English audit translation unavailable (provider or invalid output); original judgment and preservation remain valid.";
+        " English audit translation unavailable; original judgment and preservation remain valid.";
     }
     return audit;
   });
