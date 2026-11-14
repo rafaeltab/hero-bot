@@ -14,6 +14,12 @@ import {
 import { createAttachmentSession } from "./attachment-acquisition.ts";
 
 const safe = { allowed_mentions: { parse: [] }, flags: 4 } as const;
+/** An observed edit without a retained assessment invalidates the current summary. */
+const recommendation = (latest: RecordEntry, update?: ReportUpdate) =>
+  update && update.observedVersion !== latest.evidence.version
+    ? "Recommendation: unavailable for newest observed version; earlier evidence retained in thread\nReason: A newer version has no retained assessment yet. Do not treat the earlier recommendation as current."
+    : `Recommendation: ${latest.judgment.action}\nReason: ${latest.judgment.reason}`;
+
 /** Threads inherit the proven-private audit text channel. No extra users invited. */
 export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
   Layer.effect(
@@ -50,7 +56,7 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
           const body = {
             ...safe,
             content:
-              `Automatic report — ${e.authorId}\nRecommendation: ${latest.judgment.action}\nReason: ${latest.judgment.reason}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${latest.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: ${history}\nContext: ${(e.replyAncestors ?? []).length} ancestors; ${(e.nearbyMessages ?? []).length} nearby. Full attributed evidence and omissions in thread.\nAttachment preservation: see evidence thread and private delivery record; partial until confirmed.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nNewest assessed source version: ${latest.evidence.version}\nNewest observed source version: ${update?.observedVersion ?? e.version}\nEarlier actionable evidence remains in the thread.\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
+              `Automatic report — ${e.authorId}\n${recommendation(latest, update)}\nExecution: disabled; ban, purgatory and deletion skipped.\nMessage deletion: not attempted. Observed restriction: ${e.restriction}\nRoles at source: ${e.roles.join(", ") || "(none supplied)"}\nObserved roles: ${latest.observedRoles?.join(", ") ?? "unavailable"}\nBrief moderation history: ${history}\nContext: ${(e.replyAncestors ?? []).length} ancestors; ${(e.nearbyMessages ?? []).length} nearby. Full attributed evidence and omissions in thread.\nAttachment preservation: see evidence thread and private delivery record; partial until confirmed.\nSource: https://discord.com/channels/${e.guildId}/${e.channelId}/${e.messageId}\nRetained assessment source version: ${latest.evidence.version}\nNewest observed source version: ${update?.observedVersion ?? e.version}\nEarlier actionable evidence remains in the thread.\nCreated: ${Number.isNaN(Date.parse(e.version)) ? "unavailable" : `<t:${Math.floor(Date.parse(e.version) / 1000)}:R>`}`.slice(
                 0,
                 1900,
               ),

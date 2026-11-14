@@ -36,9 +36,11 @@ export const IntakeLive = Layer.effect(
         failures: {},
         active: [],
       };
+    const notices = new Set<string>();
     const recover = (guild: string, stage: FailureStage) =>
       Effect.sync(() => {
         const current = snapshot(guild);
+        notices.delete(JSON.stringify([guild, stage]));
         health.set(guild, {
           ...current,
           active: current.active.filter((s) => s !== stage),
@@ -64,21 +66,54 @@ export const IntakeLive = Layer.effect(
     };
     const reportFailure = (
       guild: string,
-      channel: string | null,
+      _channel: string | null,
       stage: FailureStage,
       missed = false,
     ) =>
       Effect.gen(function* () {
-        if (!recordFailure(guild, stage, missed)) return;
-        yield* reports
-          .notify(guild, channel, structuredClone(snapshot(guild)))
-          .pipe(
-            Effect.catch(() =>
-              Console.log(
-                `moderation service notification failed; guild=${guild}; stage=${stage}; missed=${snapshot(guild).missedMessages}; inspect private service readiness`,
-              ),
-            ),
+        recordFailure(guild, stage, missed);
+        const key = JSON.stringify([guild, stage]);
+        if (notices.has(key)) return;
+        notices.add(key);
+        yield* Effect.gen(function* () {
+          const config = (yield* configurations.history(guild)).at(-1);
+          if (!config)
+            return yield* Effect.fail(
+              new ModerationUnavailable({ reason: "configuration" }),
+            );
+          const fresh = yield* access.inspect(
+            guild,
+            config.actorId,
+            config.roles,
           );
+          // A caller's source or stale route never authorizes a service notice.
+          const route = fresh.channels.find(
+            (c) => c.id === config.auditChannel && c.private && c.usable,
+          );
+          if (!route || fresh.problems.length)
+            return yield* Effect.fail(
+              new ModerationUnavailable({ reason: "configuration" }),
+            );
+          yield* reports.notify(
+            guild,
+            route.id,
+            structuredClone(snapshot(guild)),
+          );
+        }).pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              notices.delete(key);
+            }),
+          ),
+          Effect.catch(() =>
+            Effect.gen(function* () {
+              notices.delete(key);
+              yield* Console.log(
+                `moderation service notification failed; guild=${guild}; stage=${stage}; missed=${snapshot(guild).missedMessages}; inspect private service readiness`,
+              );
+            }),
+          ),
+        );
       });
     const context = yield* Effect.serviceOption(EvidenceContext);
 
@@ -177,17 +212,45 @@ export const IntakeLive = Layer.effect(
             observedRoles: a.actorRoles,
           };
           stage = "database";
-          const retain = yield* store.serialize(
+          // Publish only the content-free decision before translation. A newer none
+          // stays transient while an older judgment can still make this source actionable.
+          yield* store.serialize(
             e,
-            Effect.gen(function* () {
-              const prior = yield* store.read(e.guildId, e.messageId);
-              if (judgment.action === "none" && prior.length === 0) {
-                yield* store.assessed(e);
-                return false;
-              }
-              return true;
-            }),
+            store.assessed(
+              e,
+              judgment.action === "none" ? "harmless" : "actionable",
+            ),
           );
+          const retention = () =>
+            store.serialize(
+              e,
+              Effect.gen(function* () {
+                const prior = yield* store.read(e.guildId, e.messageId);
+                const progress = yield* store.progress(e);
+                if (
+                  judgment.action !== "none" ||
+                  prior.length ||
+                  progress.some((p) => p.state === "actionable")
+                )
+                  return "retain" as const;
+                if (
+                  progress.some(
+                    (p) =>
+                      Date.parse(p.version) < Date.parse(e.version) &&
+                      (p.state === "claimed" || p.state === "legacy"),
+                  )
+                )
+                  return "pending" as const;
+                yield* store.assessed(e);
+                return "discard" as const;
+              }),
+            );
+          let decision = yield* retention();
+          while (decision === "pending") {
+            yield* Effect.sleep("25 millis");
+            decision = yield* retention();
+          }
+          const retain = decision === "retain";
           if (!retain) return "none" as const;
           stage = "translation";
           const auditTranslation = yield* translateAudit(record, ai).pipe(

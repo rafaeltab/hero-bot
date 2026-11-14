@@ -2,16 +2,14 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { open, readFile, unlink } from "node:fs/promises";
 import { ConfigProvider, Effect, Layer } from "effect";
-import {
-  judgmentInstructions,
-  parseJudgment,
-} from "../dist/capabilities/moderation/judgment.js";
+import { judgmentInstructions } from "../dist/capabilities/moderation/judgment.js";
 import { initialPolicy } from "../dist/capabilities/moderation/policy.js";
 import { translateAudit } from "../dist/capabilities/moderation/translation.js";
 import {
   TextGeneration,
   TextGenerationUnavailable,
 } from "../dist/capabilities/text-generation/contract.js";
+import { evaluationResult } from "./evaluation-result.mjs";
 import { paidTextLayer } from "./paid-ai.mjs";
 
 const hash = (s) => createHash("sha256").update(s).digest("hex");
@@ -226,25 +224,7 @@ async function evaluate(output) {
           { guildId: "evaluation", purpose: "judgment" },
           contents,
         )
-        .pipe(
-          Effect.map((raw) => {
-            try {
-              return { actual: parseJudgment(raw) };
-            } catch {
-              return { failure: "invalid-output" };
-            }
-          }),
-          Effect.catch((error) =>
-            Effect.succeed({
-              failure:
-                error.operation === "budget"
-                  ? "budget-exhausted"
-                  : error.operation === "accounting"
-                    ? "accounting-unavailable"
-                    : "provider-unavailable",
-            }),
-          ),
-        );
+        .pipe(evaluationResult);
       let translation = {
         status: "not-selected",
         limitation:

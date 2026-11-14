@@ -740,3 +740,34 @@ evidence-channel messages or invokes paid AI. Confidential intake/full review,
 restriction/action-history ingestion, and execution/purgatory/isolation checks
 remain unavailable. #40 remains the developer's live QA, with no live observation
 claimed by this implementation.
+
+### Concurrent edits and acquisition notices
+
+A content-free durable `actionable` or `harmless` decision is recorded before
+translation. A newer harmless assessment waits transiently for an older unresolved
+judgment on the same source; AI calls remain concurrent and no source lock spans
+AI or this wait. If the older source becomes actionable, the newer exact evidence
+and judgment are retained even while the older translation is unfinished. If all
+older judgments are harmless, ordinary-none content is discarded without storage,
+translation or an evidence archive. The wait checks durable progress, so separate
+processes coordinate without an AI concurrency limit or application timeout.
+
+An unresolved durable claim (including a crash before a decision) remains uncertain,
+never replayed. A waiting harmless version can remain pending until shutdown in
+that case; shutdown discards its transient contents, leaving content-free progress.
+Operators must inspect private readiness rather than infer a harmless or current
+finding from missing records. A root with a newer observed version lacking a
+retained assessment explicitly withholds a current recommendation; the earlier
+finding remains attributed to its own version in the evidence thread. New events
+never reconstruct missing evidence after restart.
+
+Acquisition errors and rejected partial-edit snapshots resolve the latest configured
+**same-guild private audit channel** without using the source channel or source
+contents. Current permissions/privacy are checked before sending. Repeated failures
+aggregate in private status; one successful notice per active category is sent.
+Failed or interrupted sends do not count as delivered and remain eligible for a
+notice on a subsequent failure. Missing configuration or unsafe/unavailable routes
+produce sanitized operator logging only, with no member report or replay. Counts
+and notification aggregation remain process-local; other guilds are independent.
+Live developer QA #40 is still required; these controlled checks do not establish
+live recommendation quality, translation quality, readability or Discord delivery.

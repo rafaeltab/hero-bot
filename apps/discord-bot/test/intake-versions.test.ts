@@ -375,3 +375,150 @@ it.effect.each([
       }),
     ),
 );
+
+it.live.each(["ban", "none"] as const)(
+  "newer harmless judgment waits for an older unresolved %s source and survives restart",
+  (action) =>
+    scenario((f, reopen) =>
+      Effect.gen(function* () {
+        let release!: (s: string) => void;
+        let started!: () => void;
+        let newerJudged!: () => void;
+        const waiting = new Promise<void>((r) => {
+          started = r;
+        });
+        const newer = new Promise<void>((r) => {
+          newerJudged = r;
+        });
+        f.generate((input) =>
+          JSON.parse(input).version === evidence.version
+            ? Effect.promise(() => {
+                started();
+                return new Promise<string>((r) => {
+                  release = r;
+                });
+              })
+            : Effect.sync(() => {
+                newerJudged();
+                return judgment(input);
+              }),
+        );
+        const send = (e: typeof evidence) =>
+          reopen(
+            Effect.gen(function* () {
+              return yield* (yield* Intake).receive(e);
+            }),
+          );
+        const older = Effect.runPromise(send(evidence));
+        yield* Effect.promise(() => waiting);
+        const harmless = Effect.runPromise(send(edit));
+        yield* Effect.promise(() => newer);
+        // Observe the durable decision, not elapsed wall time, before releasing V1.
+        yield* reopen(
+          Effect.gen(function* () {
+            const store = yield* IntakeStore;
+            while (
+              !(yield* store.progress(evidence)).some(
+                (p) => p.version === edit.version && p.state === "harmless",
+              )
+            ) {
+              yield* Effect.yieldNow;
+            }
+            expect(yield* store.read("10", "100")).toEqual([]);
+          }),
+        );
+        release(
+          JSON.stringify({
+            action,
+            reason: "Controlled policy result.",
+            offendingUrls: [],
+          }),
+        );
+        expect(yield* Effect.promise(() => older)).toBe(
+          action === "ban" ? "reported" : "none",
+        );
+        expect(yield* Effect.promise(() => harmless)).toBe(
+          action === "ban" ? "reported" : "none",
+        );
+        yield* reopen(
+          Effect.gen(function* () {
+            const history = yield* (yield* IntakeStore).read("10", "100");
+            expect(
+              history.map((h) => [
+                h.record.evidence.version,
+                h.record.judgment.action,
+              ]),
+            ).toEqual(
+              action === "ban"
+                ? [
+                    [evidence.version, "ban"],
+                    [edit.version, "none"],
+                  ]
+                : [],
+            );
+            expect(yield* (yield* Intake).receive(edit)).toBe("duplicate");
+          }),
+        );
+        expect(f.reports.at(-1)?.update?.latest.judgment.action).toBe(
+          action === "ban" ? "none" : undefined,
+        );
+        expect(f.roots()).toBe(action === "ban" ? 1 : 0);
+      }),
+    ),
+);
+
+it.live(
+  "newer none is retained while older actionable translation is suspended",
+  () =>
+    scenario((f, reopen) =>
+      Effect.gen(function* () {
+        let release!: (s: string) => void;
+        let started!: () => void;
+        const waiting = new Promise<void>((r) => {
+          started = r;
+        });
+        const original = {
+          ...evidence,
+          text: "Estoy vendiendo copias completas del curso sin permiso del autor.",
+        };
+        f.generate((input) =>
+          Array.isArray(JSON.parse(input))
+            ? Effect.promise(() => {
+                started();
+                return new Promise<string>((r) => {
+                  release = r;
+                });
+              })
+            : Effect.succeed(judgment(input)),
+        );
+        const send = (e: typeof evidence) =>
+          reopen(
+            Effect.gen(function* () {
+              return yield* (yield* Intake).receive(e);
+            }),
+          );
+        const older = Effect.runPromise(send(original));
+        yield* Effect.promise(() => waiting);
+        expect(yield* send(edit)).toBe("reported");
+        release("invalid translation");
+        expect(yield* Effect.promise(() => older)).toBe("reported");
+        yield* reopen(
+          Effect.gen(function* () {
+            expect(
+              (yield* (yield* IntakeStore).read("10", "100")).map((h) => [
+                h.record.evidence.text,
+                h.record.judgment.action,
+              ]),
+            ).toEqual([
+              [original.text, "ban"],
+              ["allowed", "none"],
+            ]);
+          }),
+        );
+        expect(f.reports.at(-1)?.update?.latest.evidence.version).toBe(
+          edit.version,
+        );
+        expect(f.roots()).toBe(1);
+      }),
+    ),
+);

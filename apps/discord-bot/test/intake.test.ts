@@ -1,5 +1,12 @@
 import { expect, it } from "@effect/vitest";
-import { ConfigProvider, Deferred, Effect, Fiber, Layer } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+} from "effect";
 import { openAITextLive } from "../src/adapters/ai.ts";
 import { budgetPostgresLayer } from "../src/adapters/budget-postgres.ts";
 import { AiBudget } from "../src/capabilities/ai-budget/contract.ts";
@@ -189,8 +196,10 @@ const scenario = (
                           state: "complete" as const,
                         };
                 }),
-          notify: () =>
+          notify: (guild, channel) =>
             Effect.sync(() => {
+              expect(guild).toBe("10");
+              expect(channel).toBe("30");
               notices.push("service failure");
             }).pipe(
               Effect.andThen(options.fault === "notify" ? fail() : Effect.void),
@@ -359,7 +368,11 @@ it.effect.each(["ai", "claim", "save", "history"])(
         Effect.gen(function* () {
           expect(yield* i.receive(evidence)).toBe("failed");
           expect([records, reports]).toEqual([[], []]);
-          expect(notices).toEqual(["service failure"]);
+          expect(notices).toEqual(
+            fault === "history" || fault === "privacy"
+              ? []
+              : ["service failure"],
+          );
         }),
       { fault },
     ),
@@ -373,7 +386,9 @@ it.effect.each(["publish", "privacy"])(
           expect(yield* i.receive(evidence)).toBe("failed");
           expect(records).toHaveLength(1);
           expect(reports).toEqual([]);
-          expect(notices).toEqual(["service failure"]);
+          expect(notices).toEqual(
+            fault === "privacy" ? [] : ["service failure"],
+          );
           expect(["duplicate", "failed"]).toContain(yield* i.receive(evidence));
         }),
       { fault },
@@ -409,17 +424,36 @@ it.effect.each([
   ),
 );
 it.effect(
-  "failed service notification uses sanitized logging without retaining ordinary contents",
-  () =>
-    scenario(
+  "failed service notification logs only sanitized service state and remains retryable",
+  () => {
+    const logs: unknown[][] = [];
+    return scenario(
       (i, records, reports) =>
         Effect.gen(function* () {
           expect(yield* i.receive(evidence)).toBe("failed");
+          yield* i.reportFailure("10", null, "judgment", true);
           expect([records, reports]).toEqual([[], []]);
+          expect(logs).toEqual([
+            [
+              "moderation service notification failed; guild=10; stage=judgment; missed=1; inspect private service readiness",
+            ],
+            [
+              "moderation service notification failed; guild=10; stage=judgment; missed=2; inspect private service readiness",
+            ],
+          ]);
         }),
       { raw: "bad", fault: "notify" },
-    ),
+    ).pipe(
+      Effect.provideService(Console.Console, {
+        ...console,
+        log: (...args) => {
+          logs.push(args);
+        },
+      }),
+    );
+  },
 );
+
 it.effect(
   "outage aggregates missed counts without member reports, replay or cross-server failures",
   () =>
@@ -1543,6 +1577,50 @@ it.effect(
             ),
           ),
         );
+      }),
+    ),
+);
+
+it.effect(
+  "acquisition failures resolve a private guild route and failed notices remain retryable",
+  () =>
+    scenario(
+      (i, records, reports, inputs, notices) =>
+        Effect.gen(function* () {
+          yield* i.reportFailure("10", null, "evidence", true);
+          yield* i.reportFailure("10", null, "evidence", true);
+          expect(notices).toEqual(["service failure", "service failure"]);
+          expect(yield* i.status("10")).toMatchObject({
+            missedMessages: 2,
+            active: ["evidence"],
+          });
+          expect(yield* i.status("other")).toMatchObject({
+            missedMessages: 0,
+            active: [],
+          });
+          expect([records, reports, inputs]).toEqual([[], [], []]);
+        }),
+      { fault: "notify" },
+    ),
+);
+
+it.effect(
+  "source acquisition failure sends one private service notice without a member finding",
+  () =>
+    scenario((i, records, reports, inputs, notices) =>
+      Effect.gen(function* () {
+        yield* i.reportFailure("10", null, "evidence", true);
+        yield* i.reportFailure("10", "untrusted-source", "evidence", true);
+        expect(notices).toEqual(["service failure"]);
+        expect(yield* i.status("10")).toMatchObject({
+          missedMessages: 2,
+          active: ["evidence"],
+        });
+        expect(yield* i.status("other")).toMatchObject({
+          missedMessages: 0,
+          active: [],
+        });
+        expect([records, reports, inputs]).toEqual([[], [], []]);
       }),
     ),
 );

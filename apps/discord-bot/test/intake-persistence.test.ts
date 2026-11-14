@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
+import { Client } from "pg";
 import { intakePostgresLayer } from "../src/adapters/intake-postgres.ts";
 import { IntakeStore } from "../src/capabilities/moderation/ports.ts";
 import { auditRecord } from "./support/audit-translation-fixture.ts";
@@ -229,6 +230,60 @@ it.effect(
         }).pipe(
           Effect.provide(intakePostgresLayer(table)),
           Effect.provide(databaseConfig),
+        );
+      }),
+    ),
+);
+
+it.effect(
+  "legacy content-free claims remain uncertain and invalid stored lifecycle states fail closed",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const table = yield* configurationDatabase;
+        const reopen = <A, E>(task: Effect.Effect<A, E, IntakeStore>) =>
+          task.pipe(
+            Effect.provide(intakePostgresLayer(table)),
+            Effect.provide(databaseConfig),
+          );
+        yield* reopen(
+          Effect.gen(function* () {
+            yield* (yield* IntakeStore).claim(evidence);
+          }),
+        );
+        const client = yield* Effect.acquireRelease(
+          Effect.promise(async () => {
+            const client = new Client({
+              connectionString: process.env.HERO_TEST_DATABASE_URL,
+            });
+            await client.connect();
+            return client;
+          }),
+          (client) => Effect.promise(() => client.end()),
+        );
+        yield* Effect.promise(() =>
+          client.query(`update "${table}" set state='legacy'`),
+        );
+        yield* reopen(
+          Effect.gen(function* () {
+            const store = yield* IntakeStore;
+            expect(yield* store.progress(evidence)).toEqual([
+              { version: evidence.version, state: "legacy" },
+            ]);
+            expect(yield* store.claim(evidence)).toBe(false);
+            expect(yield* store.read("10", "100")).toEqual([]);
+          }),
+        );
+        yield* Effect.promise(() =>
+          client.query(`update "${table}" set state='invalid'`),
+        );
+        yield* reopen(
+          Effect.gen(function* () {
+            expect(
+              (yield* (yield* IntakeStore).progress(evidence).pipe(Effect.flip))
+                .reason,
+            ).toBe("database");
+          }),
         );
       }),
     ),

@@ -536,13 +536,15 @@ it.effect(
       expect(requests[0]).toMatchObject({
         url: expect.stringContaining("/channels/30/messages/original"),
         body: {
-          content: expect.stringContaining("Recommendation: none"),
+          content: expect.stringContaining(
+            "Recommendation: unavailable for newest observed version",
+          ),
           allowed_mentions: { parse: [] },
           flags: 4,
         },
       });
       expect(JSON.stringify(requests[0]?.body)).toContain(
-        "Newest assessed source version: 2026-11-13T00:01:00Z",
+        "Retained assessment source version: 2026-11-13T00:01:00Z",
       );
       expect(JSON.stringify(requests[0]?.body)).toContain(
         "Newest observed source version: 2026-11-13T00:02:00Z",
