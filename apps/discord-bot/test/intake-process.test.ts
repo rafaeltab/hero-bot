@@ -65,7 +65,7 @@ it("executable moderation path judges actionable/harmless creations, exempts own
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(Error("offline intake timed out")),
+        () => reject(Error(`offline intake timed out: ${output}`)),
         5000,
       );
       child.stdout.setEncoding("utf8").on("data", (chunk) => {
@@ -174,6 +174,7 @@ it("executable moderation path judges actionable/harmless creations, exempts own
           }),
           DATABASE_URL: process.env.HERO_TEST_DATABASE_URL,
           HERO_TEST_REPORT_PATH: path,
+          HERO_TEST_RESTART: "true",
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
