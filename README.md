@@ -94,3 +94,6 @@ See [workspace versions](docs/workspace-validation.md), [current validation](doc
 For upgrades and troubleshooting, use the short [toolchain maintenance guide](docs/toolchain-maintenance.md).
 The [survivor triage](docs/mutation-survivor-triage.md) distinguishes new regression
 tests, remaining behavioral gaps and currently nonobservable mutations.
+
+See [notification-only server configuration](docs/moderation-configuration.md) for
+the separate multi-server setup runtime, private commands and reproducible QA.

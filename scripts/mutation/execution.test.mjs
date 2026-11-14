@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -61,14 +62,19 @@ test("real mutation reports separate line scope, per-test coverage, static fallb
     );
     put(
       "apps/discord-bot/test/values.test.ts",
-      `import { expect, it } from '@effect/vitest';
+      `import { readFileSync } from 'node:fs';
+import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import { changed, startup, untouched } from '../src/values.ts';
-it.effect('target', () => Effect.sync(() => { expect(changed(2)).toBe(4); }));
+it.effect('target', () => Effect.sync(() => {
+  expect(readFileSync(new URL('../../../evaluations/evidence.txt', import.meta.url), 'utf8')).toBe('original evidence');
+  expect(changed(2)).toBe(4);
+}));
 it('initialization', () => { expect(startup).toBe('ready'); });
 it('unrelated', () => { expect(untouched(4)).toBe(3); });
 `,
     );
+    put("evaluations/evidence.txt", "original evidence");
     git("add", ".");
     git("commit", "-qm", "before");
     const baseValue = git("rev-parse", "HEAD").trim();
@@ -78,11 +84,17 @@ it('unrelated', () => { expect(untouched(4)).toBe(3); });
       "apps/discord-bot/src/values.ts",
       'export const startup = "ready";\nexport function changed(n: number) {\n  return n + 2;\n}\nexport function untouched(n: number) { return n - 1; }\n',
     );
-    symlinkSync(
+    // Like pnpm's real app layout, the directory itself must be discoverable
+    // by Stryker; dependency entries may still be symlinks.
+    mkdirSync(resolve(app, "node_modules"));
+    for (const name of readdirSync(
       resolve(workspace, "apps/discord-bot/node_modules"),
-      resolve(app, "node_modules"),
-      "dir",
-    );
+    )) {
+      symlinkSync(
+        resolve(workspace, "apps/discord-bot/node_modules", name),
+        resolve(app, "node_modules", name),
+      );
+    }
     const freshLog = run("--selection", "per-test");
     const fresh = report();
     const mutants = fresh.files["src/values.ts"].mutants.filter(
