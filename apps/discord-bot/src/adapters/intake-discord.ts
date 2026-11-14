@@ -237,7 +237,7 @@ export const createReportsDiscordLayer = (transport: typeof fetch = fetch) =>
               );
             yield* rest.createMessage(channel, {
               ...safe,
-              content: `Moderation service failure: assessment, preservation or private delivery incomplete. No punishment attempted. No automatic replay. Check operator readiness and private records; this is not a member finding.${health ? `\nSince process start ${health.since}: missed messages ${health.missedMessages}; active failures: ${health.active.join(", ")}. Counts continue in private /doctor status; historical loss before start is unknown.` : ""}`,
+              content: `${health?.active.length === 1 && health.active[0] === "translation" ? "Moderation audit limitation: English translation unavailable; valid judgment and original evidence preservation are independent." : "Moderation service failure: assessment, preservation or private delivery incomplete."} No punishment attempted. No automatic replay. Check operator readiness and private records; this is not a member finding.${health ? `\nSince process start ${health.since}: missed messages ${health.missedMessages}; active failures: ${health.active.join(", ")}. Counts continue in private /doctor status; historical loss before start is unknown.` : ""}`,
             });
           }).pipe(
             Effect.mapError((error) =>

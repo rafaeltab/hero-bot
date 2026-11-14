@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { intakePostgresLayer } from "../src/adapters/intake-postgres.ts";
 import { IntakeStore } from "../src/capabilities/moderation/ports.ts";
+import { auditRecord } from "./support/audit-translation-fixture.ts";
 import {
   configurationDatabase,
   databaseConfig,
@@ -25,6 +26,7 @@ it.effect(
           model: "gpt-6-luna",
           provider: "openai/chat",
           assessedAt: "today",
+          auditTranslation: auditRecord,
         };
         yield* Effect.gen(function* () {
           const s = yield* IntakeStore;

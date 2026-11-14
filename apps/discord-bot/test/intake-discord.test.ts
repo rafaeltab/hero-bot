@@ -5,6 +5,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { reportsDiscordLayer } from "../src/adapters/intake-discord.ts";
 import { Reports } from "../src/capabilities/moderation/ports.ts";
+import { auditRecord } from "./support/audit-translation-fixture.ts";
 import { configuration, evidence } from "./support/intake-fixture.ts";
 
 it.effect(
@@ -24,13 +25,14 @@ it.effect(
         model: "gpt-6-luna",
         provider: "openai/chat",
         assessedAt: "today",
+        auditTranslation: auditRecord,
       });
       expect(result).toEqual({
         rootId: "root",
         threadId: "thread",
         state: "complete",
       });
-      expect(requests.map((r) => r.method)).toEqual(["POST", "POST", "POST"]);
+      expect(new Set(requests.map((r) => r.method))).toEqual(new Set(["POST"]));
       expect(requests[0]).toMatchObject({
         url: expect.stringContaining("/channels/30/messages"),
         body: {
@@ -39,6 +41,11 @@ it.effect(
         },
       });
       expect(requests[1]?.url).toContain("/messages/root/threads");
+      const thread = requests
+        .slice(2)
+        .map((r) => (r.body as { content: string }).content)
+        .join("");
+      expect(JSON.parse(thread).auditTranslation).toEqual(auditRecord);
       expect(JSON.stringify(requests[2]?.body)).toContain(
         "bilibili.com/video/1",
       );
@@ -612,6 +619,55 @@ it.effect.each([
           recover: () => Effect.void,
           receive: () => Effect.die("foreign snapshot reached intake"),
         }),
+      ),
+    );
+  },
+);
+
+it.effect(
+  "dfx translation-only health notice does not claim a judgment or preservation failure",
+  () => {
+    const bodies: string[] = [];
+    return Effect.gen(function* () {
+      const reports = yield* Reports;
+      yield* reports.notify("10", "30", {
+        since: "today",
+        active: ["translation"],
+        missedMessages: 0,
+        failures: { translation: 1 },
+      });
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toContain(
+        "English translation unavailable; valid judgment and original evidence preservation are independent",
+      );
+      expect(bodies[0]).toContain("missed messages 0");
+      expect(bodies[0]).not.toContain(
+        "preservation or private delivery incomplete",
+      );
+    }).pipe(
+      Effect.provide(reportsDiscordLayer),
+      Effect.provide(DiscordRESTMemoryLive),
+      Effect.provide(
+        DiscordConfig.layer({ token: Redacted.make("controlled") }),
+      ),
+      Effect.provide(
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            bodies.push(
+              request.body._tag === "Uint8Array"
+                ? JSON.parse(new TextDecoder().decode(request.body.body))
+                    .content
+                : "",
+            );
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({ id: "notice" }),
+              ),
+            );
+          }),
+        ),
       ),
     );
   },
