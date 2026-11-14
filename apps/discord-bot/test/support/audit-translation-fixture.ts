@@ -31,6 +31,7 @@ export const auditRecord = {
   status: "available" as const,
   source: { guildId: "10", messageId: "100", version: "2026-11-13T00:00:00Z" },
   detector: "tinyld/1.3.4",
+  selectionOmissions: [],
   systemPrompt: "Controlled audit translation instructions",
   model: "gpt-6-luna",
   provider: "openai/chat",

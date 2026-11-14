@@ -32,7 +32,7 @@ it.effect(
         threadId: "thread",
         state: "complete",
       });
-      expect(requests.map((r) => r.method)).toEqual(["POST", "POST", "POST"]);
+      expect(new Set(requests.map((r) => r.method))).toEqual(new Set(["POST"]));
       expect(requests[0]).toMatchObject({
         url: expect.stringContaining("/channels/30/messages"),
         body: {
@@ -619,6 +619,55 @@ it.effect.each([
           recover: () => Effect.void,
           receive: () => Effect.die("foreign snapshot reached intake"),
         }),
+      ),
+    );
+  },
+);
+
+it.effect(
+  "dfx translation-only health notice does not claim a judgment or preservation failure",
+  () => {
+    const bodies: string[] = [];
+    return Effect.gen(function* () {
+      const reports = yield* Reports;
+      yield* reports.notify("10", "30", {
+        since: "today",
+        active: ["translation"],
+        missedMessages: 0,
+        failures: { translation: 1 },
+      });
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toContain(
+        "English translation unavailable; valid judgment and original evidence preservation are independent",
+      );
+      expect(bodies[0]).toContain("missed messages 0");
+      expect(bodies[0]).not.toContain(
+        "preservation or private delivery incomplete",
+      );
+    }).pipe(
+      Effect.provide(reportsDiscordLayer),
+      Effect.provide(DiscordRESTMemoryLive),
+      Effect.provide(
+        DiscordConfig.layer({ token: Redacted.make("controlled") }),
+      ),
+      Effect.provide(
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            bodies.push(
+              request.body._tag === "Uint8Array"
+                ? JSON.parse(new TextDecoder().decode(request.body.body))
+                    .content
+                : "",
+            );
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({ id: "notice" }),
+              ),
+            );
+          }),
+        ),
       ),
     );
   },

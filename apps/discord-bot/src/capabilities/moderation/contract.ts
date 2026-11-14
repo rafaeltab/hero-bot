@@ -107,9 +107,10 @@ export type Evidence = {
  * source identifies the assessed version, including retained context/history. */
 export type AuditTranslation = {
   targetLanguage: "en";
-  status: "available" | "unavailable" | "not-needed";
+  status: "available" | "unavailable" | "not-selected";
   source: { guildId: string; messageId: string; version: string };
   detector: string;
+  selectionOmissions: { pointer: string; language: "und"; reason: string }[];
   systemPrompt: string;
   model: string;
   provider: string;

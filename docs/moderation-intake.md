@@ -531,8 +531,9 @@ Selection uses pinned local `tinyld` language detection over supplied text, embe
 quote text and retained conversation/history text. Literal URL targets and metadata
 are excluded from detection. Detection is heuristic: short ASCII snippets (fewer
 than twelve letters), ambiguous and mixed-language passages can be missed. The
-record explicitly carries that limitation; `not-needed` means no excerpt was selected,
-not a guarantee that every character is English. Non-Latin passages within English
+record explicitly carries that limitation; `not-selected` means no excerpt was selected,
+not a guarantee that every character is English. `selectionOmissions` identifies
+short/undetermined excerpts by pointer with `und` language markers. Non-Latin passages within English
 text are also candidates. No missing attachment contents are inferred or reconstructed
 for translation. Inspect preserved originals when a language marker or translation
 looks uncertain; final live multilingual quality validation remains #40.

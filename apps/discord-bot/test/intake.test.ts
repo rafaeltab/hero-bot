@@ -1319,3 +1319,53 @@ it.effect(
       );
     }),
 );
+
+it.effect(
+  "translation health recovers only on successful translation, without poisoning English or another server",
+  () => {
+    let available = false;
+    return scenario(
+      (i, records, _reports, _inputs, notices) =>
+        Effect.gen(function* () {
+          const source = { ...evidence, text: "我有完整的付费课程，私信我。" };
+          expect(yield* i.receive(source)).toBe("reported");
+          expect(yield* i.receive({ ...evidence, messageId: "english" })).toBe(
+            "reported",
+          );
+          expect(yield* i.status("10")).toMatchObject({
+            active: ["translation"],
+            missedMessages: 0,
+          });
+          available = true;
+          expect(yield* i.receive({ ...source, messageId: "recovered" })).toBe(
+            "reported",
+          );
+          expect(yield* i.status("10")).toMatchObject({
+            active: [],
+            failures: { translation: 1 },
+            missedMessages: 0,
+          });
+          expect(yield* i.status("other")).toMatchObject({
+            active: [],
+            missedMessages: 0,
+          });
+          expect(records.map((r) => r.auditTranslation?.status)).toEqual([
+            "unavailable",
+            "not-selected",
+            "available",
+          ]);
+          expect(notices).toHaveLength(1);
+        }),
+      {
+        generate: (_p, _s, c) =>
+          Effect.sync(() =>
+            c?.purpose === "translation"
+              ? available
+                ? '[{"pointer":"/text","language":"zh","english":"I have the paid course."}]'
+                : "invalid"
+              : '{"action":"ban","reason":"Original assessed.","offendingUrls":[]}',
+          ),
+      },
+    );
+  },
+);
