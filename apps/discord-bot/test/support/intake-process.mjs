@@ -1,9 +1,11 @@
 import { writeFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { NodeRuntime } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Socket from "effect/socket/Socket";
+import { Client } from "pg";
 import { moderationProgram } from "../../dist/application.js";
 
 const guild = process.env.DEV_MODERATION_GUILD_IDS;
@@ -14,6 +16,47 @@ let delivered;
 const firstDelivery = new Promise((resolve) => {
   delivered = resolve;
 });
+const recordScenario = async () => {
+  if (process.env.HERO_TEST_RESTART === "true") {
+    // Existing terminal records cannot acknowledge replay processing. Observe the
+    // restarted executable for the same bounded interval before asserting silence.
+    await delay(2000);
+  } else {
+    const observer = new Client({
+      connectionString: process.env.DATABASE_URL,
+      connectionTimeoutMillis: 1000,
+      statement_timeout: 1000,
+    });
+    await observer.connect();
+    try {
+      const deadline = Date.now() + 4000;
+      while (true) {
+        const { rows } = await observer.query(
+          "select message_id, state from moderation_intake where guild_id=$1",
+          [guild],
+        );
+        if (
+          rows.filter(
+            (row) => row.message_id === "100" && row.state === "delivered",
+          ).length === 2 &&
+          rows.some(
+            (row) => row.message_id === "101" && row.state === "assessed",
+          )
+        )
+          break;
+        if (Date.now() >= deadline) throw Error("intake did not complete");
+        await delay(25);
+      }
+    } finally {
+      await observer.end();
+    }
+  }
+  writeFileSync(
+    process.env.HERO_TEST_REPORT_PATH,
+    JSON.stringify({ calls, aiCalls }),
+  );
+  console.log("intake scenario complete");
+};
 const source = (id, author, content) => ({
   guild_id: guild,
   id,
@@ -151,13 +194,9 @@ const transport = Layer.mergeAll(
             edited_timestamp: "2026-11-13T00:01:00Z",
           });
         }, 300);
-        setTimeout(() => {
-          writeFileSync(
-            process.env.HERO_TEST_REPORT_PATH,
-            JSON.stringify({ calls, aiCalls }),
-          );
-          console.log("intake scenario complete");
-        }, 2000);
+        void recordScenario().catch(() => {
+          console.error("intake scenario did not complete");
+        });
       }
       if (request.url.endsWith(`/guilds/${guild}`)) result = { owner_id: "11" };
       if (request.url.includes("/members/"))
