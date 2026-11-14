@@ -46,8 +46,13 @@ export const guildAccessLayer = (botId: string) =>
     Effect.gen(function* () {
       const rest = yield* DiscordREST;
       return GuildAccess.of({
-        inspect: (guildId, actorId, mappings, channelId) =>
+        inspect: (guildId, actorId, mappings, channelId, diagnostics = false) =>
           Effect.gen(function* () {
+            // Application intent evidence is needed only for explicit diagnostics,
+            // never an extra REST request on every ordinary message/exemption.
+            const application = diagnostics
+              ? yield* rest.getMyApplication().pipe(Effect.option)
+              : { _tag: "None" as const };
             const guild = yield* rest.getGuild(guildId);
             const actor = yield* rest.getGuildMember(guildId, actorId);
             const bot = yield* rest.getGuildMember(guildId, botId);
@@ -55,8 +60,52 @@ export const guildAccessLayer = (botId: string) =>
             const channels = [
               ...((yield* rest.listGuildChannels(guildId)) ?? []),
             ];
-            if (channelId && !channels.some((c) => c.id === channelId))
-              channels.push(yield* rest.getChannel(channelId));
+            if (channelId && !channels.some((c) => c.id === channelId)) {
+              const channel = yield* rest
+                .getChannel(channelId)
+                .pipe(Effect.option);
+              if (channel._tag === "Some") channels.push(channel.value);
+            }
+            const monitoring = [];
+            for (const c of channels) {
+              if (!("guild_id" in c) || c.guild_id !== guildId) continue;
+              const thread = [10, 11, 12].includes(c.type);
+              let parent = c;
+              let parentKnown = !thread;
+              if (thread && "parent_id" in c && c.parent_id) {
+                const found = channels.find((p) => p.id === c.parent_id);
+                const fetched = found
+                  ? { _tag: "Some" as const, value: found }
+                  : yield* rest.getChannel(c.parent_id).pipe(Effect.option);
+                if (
+                  fetched._tag === "Some" &&
+                  "guild_id" in fetched.value &&
+                  fetched.value.guild_id === guildId
+                ) {
+                  parent = fetched.value;
+                  parentKnown = true;
+                }
+              }
+              const overwrites =
+                "permission_overwrites" in parent
+                  ? (parent.permission_overwrites ?? [])
+                  : [];
+              const bits = effective(
+                guildId,
+                roles,
+                bot.roles,
+                overwrites,
+                botId,
+              );
+              monitoring.push({
+                id: c.id,
+                parentId: "parent_id" in c ? (c.parent_id ?? null) : null,
+                supported: [0, 2, 5, 10, 11, 12, 15, 16].includes(c.type),
+                readable:
+                  parentKnown && (bits & (view | 65536n)) === (view | 65536n),
+                thread,
+              });
+            }
             const botAdmin = Boolean(
               base(guildId, roles, bot.roles) & administrator,
             );
@@ -65,6 +114,15 @@ export const guildAccessLayer = (botId: string) =>
               ...roles.filter((r) => r.tags?.bot_id === botId).map((r) => r.id),
             ]);
             return {
+              monitoring,
+              ...(application._tag === "Some" &&
+              typeof application.value.flags === "number"
+                ? {
+                    messageContent: Boolean(
+                      application.value.flags & ((1 << 18) | (1 << 19)),
+                    ),
+                  }
+                : {}),
               ownerId: guild.owner_id,
               actorRoles: [...actor.roles],
               roles: roles.map((r) => r.id),

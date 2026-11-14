@@ -15,6 +15,14 @@ export type Access = {
   roles: string[];
   channels: { id: string; private: boolean; usable: boolean }[];
   problems: string[];
+  monitoring?: {
+    id: string;
+    parentId: string | null;
+    supported: boolean;
+    readable: boolean;
+    thread: boolean;
+  }[];
+  messageContent?: boolean;
 };
 export class GuildAccess extends Context.Service<
   GuildAccess,
@@ -24,6 +32,7 @@ export class GuildAccess extends Context.Service<
       actorId: string,
       roles: Configuration["roles"],
       channelId?: string,
+      diagnostics?: boolean,
     ) => Effect.Effect<Access, ModerationUnavailable>;
   }
 >()("hero-bot/GuildAccess") {}

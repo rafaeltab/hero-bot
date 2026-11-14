@@ -1,12 +1,12 @@
-> Message creation intake is now delivered by #30. See [text intake and QA](moderation-intake.md) for current behavior, additional thread permissions, and remaining unavailable capabilities. Setup-only statements below describe the #29 checkpoint.
+# Notification-only server configuration and diagnostics (#29–#39)
 
-# Notification-only server configuration (#29)
-
-This executable delivers setup only. It receives guild slash commands, not ordinary
-message events. Judgment, monitoring, attachment preservation, report delivery,
-confidential intake, AI budgets and punishment remain unavailable. No messages are
-replayed after changing configuration. Ban, purgatory and deletion are always
-disabled. No punitive controls are registered.
+The opt-in moderation runtime assesses eligible creations/edits, retains actionable
+evidence, delivers private reports, supplies supported attachment inputs, translates
+selected audit excerpts and enforces durable AI budgets. See
+[intake and final QA](moderation-intake.md) for exact limitations. Configuration and
+diagnostics are private, non-destructive and make no paid calls. Changes never
+replay old messages. Automatic ban, purgatory and deletion remain disabled;
+confidential intake, full review and execution/isolation belong to later specs.
 
 ## Start and stop
 
@@ -32,8 +32,12 @@ The app's ignored `.env` must contain:
 | DEV_DISCORD_APPLICATION_ID / PROD_DISCORD_APPLICATION_ID | Expected application                                           |
 | DEV_MODERATION_GUILD_IDS / PROD_MODERATION_GUILD_IDS     | Explicit comma-separated allowed guild IDs; multiple supported |
 | DATABASE_URL                                             | Environment-specific PostgreSQL database                       |
-| HERO_AI_API_KEY                                          | Required provider configuration; never called in this slice    |
-| HERO_AI_MODEL                                            | Use gpt-6-luna; judgment is not delivered here                 |
+| HERO_AI_API_KEY                                          | Required provider configuration; diagnostics never invoke it   |
+| HERO_AI_MODEL                                            | Use gpt-6-luna                                                 |
+
+`HERO_AI_BUDGET_JSON` is also required; use the credential-free example in
+`apps/discord-bot/.env.example` and verify prices/model bounds as explained in the
+[intake budget guide](moderation-intake.md#daily-ai-budgets-37).
 
 Only the chosen environment's Discord variables are used. Explicitly reusing the
 other environment's application ID or token is rejected. Operators must provision
@@ -50,7 +54,9 @@ availability. No provider call is needed. Startup creates the
 SELECT and INSERT. Each change appends a complete attributed JSON configuration,
 version and timestamp under its guild ID. A per-guild transaction lock and expected
 version check reject stale concurrent writes; retry an explicitly failed command.
-There is no automatic replay or retention of ordinary message contents.
+There is no automatic replay. Ordinary harmless messages retain only content-free
+version claims; actionable evidence is retained. Intake and budget tables also
+require SELECT, INSERT and UPDATE plus CREATE TABLE on first startup.
 
 The separate `pnpm dev` / `--discord-development` connection-only smoke still uses
 `DEV_DISCORD_GUILD_ID`, requires exactly one development guild, and has no setup
@@ -60,8 +66,9 @@ installation; the original single-server smoke remains an independent checkpoint
 
 ## Discord setup and commands
 
-Install with bot + applications.commands scopes. The gateway needs Guilds only in
-this slice. Do not grant Administrator, Ban Members, Manage Roles or Manage Messages.
+Install with bot + applications.commands scopes. Enable Message Content Intent
+in Developer Portal > application > Bot. The runtime requests Guilds, Guild Messages
+and Message Content. Do not grant Administrator, Ban Members, Manage Roles or Manage Messages.
 An actual server owner can start without any mapped roles; current Owner/Admin
 mappings can configure, Moderator mappings can inspect channel status but cannot
 edit or view configuration/history. Discord administrator alone does not confer
@@ -81,8 +88,9 @@ rather than silently truncated output. Do not paste private policy into public l
    private audit channel. Repeat with purpose Reporting entry. This reserves a
    private reporting entry channel; confidential intake is unavailable.
 4. `/channel-status [channel]` defaults to the invoking channel.
-   `/doctor` currently provides the same setup diagnostics. Both distinguish
-   configured exempt routes from monitoring/evidence/AI features not yet delivered.
+   `/doctor` inspects listed server surfaces and reporting configuration. Both
+   refresh roles/permissions and show process observations and current budgets.
+   They do not certify live provider connectivity, delivery or isolation.
 5. `/moderation config history` returns attributed, versioned full snapshots.
 
 Map permission roles before selecting report channels. The adapter reads the
@@ -91,7 +99,7 @@ channels and permission overwrites through Discord REST on every submission.
 Cross-guild/deleted roles and channels are rejected. Nothing edits permissions.
 
 Both report channels must be server text channels. The bot needs View Channel,
-Send Messages, Read Message History, Attach Files, Create Private Threads and Send
+Send Messages, Read Message History, Attach Files, Create Public Threads, Create Private Threads and Send
 Messages in Threads. Each mapped permission role must be able to view/read evidence.
 The bot must not have Administrator. Ordinary roles (including course roles)
 must not have effective View Channel. Only this bot's Discord-managed role is
@@ -168,3 +176,90 @@ revocation, real dfx HTTP/WebSocket command transport, and process interruption.
 Full blocking checks passed with the original thresholds. The original development
 connection smoke tests still enforce the exactly-one-guild identity guard.
 No live Discord installation or paid AI call was used for these observations.
+
+## Non-Administrator development setup and final #40 diagnostics
+
+Use a separate bot/application, database and two controlled test guilds A and B.
+Install with bot + applications.commands scopes using Developer Portal > OAuth2 >
+URL Generator. Grant only View Channel and Read Message History on each intended
+ordinary/private course/voice-text channel and forum parent. Invite the bot to
+private threads. Grant the reporting permissions listed above only in the private
+text audit/reporting-entry channels. Map actual existing Admin/Moderator roles
+before selecting channels; deny @everyone and every ordinary/course/shared-bot
+role View Channel. Ordinary Administrator roles can bypass channel denies: remove
+that privilege or map trusted administrators explicitly before configuring reports.
+Never grant the bot Administrator. Do not grant punitive permissions.
+
+Run as actual server owner (replace channel/role arguments using Discord selectors):
+
+```text
+/moderation config role group:Admin role:<Admin>
+/moderation config role group:Moderator role:<Moderator>
+/moderation config channel purpose:Audit channel:<private-audit>
+/moderation config channel purpose:Reporting entry channel:<private-entry>
+/doctor
+/channel-status channel:<ordinary-test>
+/channel-status channel:<private-course>
+/channel-status channel:<forum-post-thread>
+/channel-status channel:<private-thread>
+/channel-status channel:<voice-text>
+/channel-status channel:<private-audit>
+```
+
+Expected: private ephemeral response (large results attach `configuration.txt`),
+current configuration version, configuration database read succeeded, content-intent
+flag enabled, eligible non-exempt surfaces, exempt audit/entry routes and their
+threads, all punishment switches disabled, no action/isolation certification.
+Member roles are current; restrictions/action history remain unavailable. Service
+observations cover only this process; pre-start loss is unknown. Budget estimates,
+held/unknown capacity and current admission reason are distinct from provider
+connectivity. A successful read cannot establish thread creation/upload or provider
+acceptance; none are probed. Ordinary content may be empty even with enabled flags.
+
+As mapped Moderator, repeat `/doctor` and `/channel-status`, then attempt
+`/moderation config prompt value:Denied test` and `/moderation config show`:
+expect diagnosis access but configuration denial. Remove the Moderator role and
+resubmit: expect denial. Restore it manually. Actual owner must still configure
+with no mapped roles. Repeat in B with different mappings; never see A's policy,
+identities, failures or guild budget. Shared application totals are intentionally
+aggregate. No configuration versions should be created by diagnosis.
+
+Intentional fault/restore matrix (development guild A only):
+
+| Fault                                                                                                                    | Expected diagnostic and impact                                                                 | Restore                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Deny bot View Channel or Read Message History in a monitored course channel                                              | ERROR monitoring/context inaccessible                                                          | Remove test deny; restore both allows; rerun channel-status                                                                         |
+| Deny bot Send Messages, Attach Files, Create Public Threads, Create Private Threads or Send Messages in Threads on audit | ERROR private evidence blocked with full permission list; reports/copies may fail              | Remove each test deny and restore required allows; rerun doctor after each                                                          |
+| Allow an ordinary/course/shared-bot role View Channel on audit                                                           | ERROR unsafe; confidential evidence must not be delivered                                      | Remove allow, deny ordinary access; rerun doctor                                                                                    |
+| Remove mapped role's View Channel/Read Message History                                                                   | ERROR private evidence blocked                                                                 | Restore both permissions; rerun doctor                                                                                              |
+| Delete a mapped test role                                                                                                | ERROR mapped role missing                                                                      | Owner uses unmap with old ID, maps replacement, updates overwrites, reruns doctor                                                   |
+| Delete a configured test channel                                                                                         | ERROR select existing reporting channel                                                        | Owner creates safe private channel and uses config channel, reruns doctor                                                           |
+| Disable Message Content Intent                                                                                           | ERROR disabled/unverified; content monitoring cannot be certified (gateway may refuse startup) | Re-enable portal toggle and restart runtime                                                                                         |
+| Exhaust a budget without paid calls                                                                                      | WARNING affected AI calls stopped; missed messages stay process-local                          | Use below-reservation limit procedure in intake guide; restore consistent policy across stopped instances, restart; new events only |
+| Database offline/denied                                                                                                  | ERROR sanitized setup unavailable; no success certificate                                      | Restore worktree PostgreSQL/database grants and DATABASE_URL; rerun; no ledger deletion                                             |
+
+Use controlled offline commands for unavailable AI, database and budgets instead
+of disrupting production credentials:
+
+```sh
+export PATH="$HOME/.local/share/mise/installs/node/24.22.2/bin:$PATH"
+make install
+make infra-start
+pnpm build
+pnpm --filter @hero-bot/discord-bot exec vitest run test/diagnostics.test.ts test/moderation-commands.test.ts test/moderation-discord.test.ts test/moderation-persistence.test.ts test/ai-budget.test.ts test/intake-process.test.ts
+pnpm check
+```
+
+A controlled live probe requires the developer's explicit #40 run: from an ordinary
+test member send a canonical actionable fixture from `evaluations/README.md` in a
+controlled source channel, inspect the private report/root/thread and copied
+attachment as Moderator, then verify an ordinary member cannot view either through
+the UI or direct message/thread link. This deliberately invokes paid judgment (and
+possibly translation) under configured budgets; diagnostics alone never do so.
+Check source and member roles are unchanged. Exercise harmless/edit/attachment/
+multilingual cases using the intake guide and record real observations, prompt/
+configuration/model provenance, IDs privately and remaining limitations. Permission
+checks cannot enumerate every archived/private thread or prove all future membership
+states: check each intended private thread and use controlled probes. No automatic
+catch-up, punitive execution or purgatory checks are delivered. Final live #40
+observations remain outstanding; offline checks are not live evidence.

@@ -402,3 +402,71 @@ it.effect(
       ),
     ),
 );
+
+it.effect.each([1024n, 2048n, 32768n, 65536n, 1n << 35n, 1n << 36n, 1n << 38n])(
+  "refreshes a removed essential permission %s and its restoration at real REST transport",
+  (missing) => {
+    let denied = missing;
+    const methods: string[] = [];
+    return Effect.gen(function* () {
+      const access = yield* GuildAccess;
+      const mappings = { Owner: [], Admin: [], Moderator: [] };
+      expect((yield* access.inspect("10", "11", mappings)).channels).toEqual([
+        { id: "20", private: true, usable: false },
+      ]);
+      denied = 0n;
+      const restored = yield* access.inspect(
+        "10",
+        "11",
+        mappings,
+        undefined,
+        true,
+      );
+      expect(restored.channels).toEqual([
+        { id: "20", private: true, usable: true },
+      ]);
+      expect(restored.messageContent).toBe(true);
+      expect(methods.every((method) => method === "GET")).toBe(true);
+    }).pipe(
+      Effect.provide(guildAccessLayer("99")),
+      Effect.provide(DiscordRESTMemoryLive),
+      Effect.provide(DiscordConfig.layer({ token: Redacted.make("secret") })),
+      Effect.provide(
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            methods.push(request.method);
+            let body: unknown = { owner_id: "11", flags: 524288 };
+            if (request.url.endsWith("/roles"))
+              body = [
+                { id: "10", permissions: "0" },
+                {
+                  id: "60",
+                  permissions: "377957223424",
+                  tags: { bot_id: "99" },
+                },
+              ];
+            if (request.url.includes("/members/")) body = { roles: ["60"] };
+            if (request.url.endsWith("/channels"))
+              body = [
+                {
+                  id: "20",
+                  guild_id: "10",
+                  type: 0,
+                  permission_overwrites: [
+                    { id: "99", type: 1, deny: String(denied), allow: "0" },
+                  ],
+                },
+              ];
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(JSON.stringify(body)),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  },
+);

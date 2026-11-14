@@ -725,3 +725,18 @@ connects to Discord or changes the saved runtime policy. Both paid tools use the
 same durable budget admission/settlement as moderation; `--guild` explicitly selects
 the configured allowance for synthetic evidence. Offline subprocess coverage and
 expected accounting outcomes are included in those instructions.
+
+## Current private diagnostics (#39)
+
+See [non-Administrator setup, diagnostic commands and fault restoration](moderation-configuration.md#non-administrator-development-setup-and-final-40-diagnostics).
+`/doctor` reads listed guild surfaces; `/channel-status [channel]` focuses monitoring
+on one channel (including a thread fetched separately) while checking configured
+report routes. Both freshly read current authority and permissions, distinguish
+essential monitoring/private-evidence errors from optional affected AI warnings,
+and include current budget admission plus process-only observations. Missing
+application intent evidence is unverified, never healthy. Thread/archive membership,
+uploads and live model acceptance require controlled probes; neither command sends
+evidence-channel messages or invokes paid AI. Confidential intake/full review,
+restriction/action-history ingestion, and execution/purgatory/isolation checks
+remain unavailable. #40 remains the developer's live QA, with no live observation
+claimed by this implementation.
