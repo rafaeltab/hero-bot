@@ -7,14 +7,17 @@ permissions:
   contents: read
 jobs:
   mutation-advisory:
-    name: Advisory (${{ matrix.shard }}/4)
+    name: Advisory (${{ matrix.shard }}/8)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     continue-on-error: true
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Full build/test fallback is required for subprocess mutation coverage.
+    # The notification-only slice contains 2,807 mutants (440 in the largest
+    # eight-way shard), so a 20-minute job budget cannot complete the analysis.
+    timeout-minutes: 240
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -46,7 +49,7 @@ jobs:
       - name: Analyze added/replaced production lines
         env:
           MUTATION_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: pnpm mutation --base "$MUTATION_BASE" --shard "${{ matrix.shard }}/4"
+        run: pnpm mutation --base "$MUTATION_BASE" --shard "${{ matrix.shard }}/8"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -71,7 +74,7 @@ jobs:
           pattern: mutation-shard-*
           path: mutation-results
       - if: always()
-        run: node scripts/mutation/summary.mjs mutation-results 4
+        run: node scripts/mutation/summary.mjs mutation-results 8
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
