@@ -6,10 +6,10 @@
 pnpm mutation:verify
 pnpm mutation --base <exact-commit-or-ref> --plan
 pnpm mutation --base <exact-commit-or-ref>
-# Four independent jobs can execute these in parallel:
-pnpm mutation --base <exact-commit-or-ref> --shard 1/4
-# Repeat for 2/4, 3/4 and 4/4, then:
-node scripts/mutation/summary.mjs apps/discord-bot/reports/mutation 4
+# Eight independent jobs can execute these in parallel:
+pnpm mutation --base <exact-commit-or-ref> --shard 1/8
+# Repeat for 2/8 through 8/8, then:
+node scripts/mutation/summary.mjs apps/discord-bot/reports/mutation 8
 ```
 
 Full-suite mode requires disposable PostgreSQL through `HERO_TEST_DATABASE_URL`.
@@ -24,15 +24,20 @@ source is still copied and instrumented in the sandbox; the evidence fixtures
 are not mutation targets. The real execution fixture exercises these paths in
 both per-test and full-suite modes.
 
-The earlier single-job whole-PR run selected 150 mutants and exceeded its configured
-20-minute budget. CI now balances whole original changed ranges across four shards,
-retaining the same total scope, per-mutant full build/test fallback and 20-minute
-budget **per shard**. Fail-fast is disabled, so a failure does not cancel siblings.
+The notification-only PR selects 2,807 mutants. All four original shards passed
+their initial test runs but reached the 20-minute job limit during mutation
+execution. CI now balances whole original changed ranges across eight shards,
+retaining the same total scope and per-mutant full build/test fallback. An
+instrumentation-only inventory counted 401, 440, 398, 363, 211, 221, 410 and 363
+mutants across those shards; it is not a completed mutation analysis. The measured
+full-suite cost requires hours for the largest shard, so each job has a bounded
+240-minute budget, including setup, verification and artifact upload. No mutants
+are sampled out. Fail-fast is disabled, so a failure does not cancel siblings.
 Numbered checks distinguish shards; these are not duplicate push/PR executions.
 
 Each shard writes its plan before execution, separate JSON/HTML reports, and a
 completion receipt only after Stryker returns. Artifacts upload even on failure.
-`Mutations / Results` requires matching input fingerprints, all four completed
+`Mutations / Results` requires matching input fingerprints, all eight completed
 receipts, unchanged report hashes, finished mutant statuses, and an exact disjoint
 union of the original ranges. Missing/failed/timed-out work is explicitly incomplete,
 not a zero or passing score. Completed shards remain useful even if a sibling fails.
