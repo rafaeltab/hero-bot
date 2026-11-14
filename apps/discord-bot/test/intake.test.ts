@@ -447,7 +447,7 @@ it.effect(
       Effect.provideService(Console.Console, {
         ...console,
         log: (...args) => {
-          logs.push(args);
+          logs.push([...args]);
         },
       }),
     );
