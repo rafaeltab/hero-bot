@@ -1,23 +1,19 @@
 name: Mutations
 on:
   pull_request:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: mutations-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   mutation-advisory:
-    name: Advisory (${{ matrix.shard }}/8)
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
-    continue-on-error: true
+    name: Advisory
     runs-on: ubuntu-24.04
-    # Full build/test fallback is required for subprocess mutation coverage.
-    # The notification-only slice contains 2,807 mutants (440 in the largest
-    # eight-way shard), so a 20-minute job budget cannot complete the analysis.
-    timeout-minutes: 240
+    timeout-minutes: 70
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -45,39 +41,43 @@ jobs:
         with:
           version: 12.16.1
       - run: pnpm install --frozen-lockfile
-      - run: pnpm mutation:verify
-      - name: Analyze added/replaced production lines
+      - name: Plan production scope
+        id: plan
         env:
-          MUTATION_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: pnpm mutation --base "$MUTATION_BASE" --shard "${{ matrix.shard }}/8"
+          MUTATION_BASE: ${{ github.event.pull_request.base.sha || github.sha }}
+          MUTATION_SCOPE: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
+        run: |
+          pnpm --silent mutation --base "$MUTATION_BASE" --scope "$MUTATION_SCOPE" --plan > /tmp/mutation-plan.json
+          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("/tmp/mutation-plan.json")); fs.appendFileSync(process.env.GITHUB_OUTPUT, `selected=${p.mutate.length > 0}\n`);'
+      - name: Restore compatible PR or default-branch checkpoints
+        if: steps.plan.outputs.selected == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apps/discord-bot/reports/mutation/checkpoint-*.json
+          key: hero-mutation-v2-${{ runner.os }}-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            hero-mutation-v2-${{ runner.os }}-${{ github.event.pull_request.number || 'main' }}-
+            hero-mutation-v2-${{ runner.os }}-main-
+      # Contract checks do not execute mutants. Ordinary CI retains all process tests.
+      - run: pnpm mutation:verify
+      - name: Verify native mutation execution and checkpoint compatibility
+        run: pnpm mutation:verify:real
+      - name: Analyze with coverage-guided unit and integration stages
+        env:
+          MUTATION_BASE: ${{ github.event.pull_request.base.sha || github.sha }}
+          MUTATION_SCOPE: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
+          MUTATION_BUDGET: ${{ github.event_name == 'pull_request' && '900' || '3600' }}
+        run: pnpm mutation --base "$MUTATION_BASE" --scope "$MUTATION_SCOPE" --budget "$MUTATION_BUDGET"
+      # PR checkpoints are confined to their merge ref and PR-number namespace.
+      - name: Save checkpoint continuation
+        if: success() && steps.plan.outputs.selected == 'true' && (github.event_name == 'pull_request' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apps/discord-bot/reports/mutation/checkpoint-*.json
+          key: hero-mutation-v2-${{ runner.os }}-${{ github.event.pull_request.number || 'main' }}-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: mutation-shard-${{ matrix.shard }}
-          path: |
-            apps/discord-bot/reports/mutation/
-            reports/mutation-fixtures/
-          if-no-files-found: warn
-  summary:
-    name: Results
-    if: always()
-    needs: mutation-advisory
-    continue-on-error: true
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: mutation-shard-*
-          path: mutation-results
-      - if: always()
-        run: node scripts/mutation/summary.mjs mutation-results 8
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: mutation-summary
-          path: mutation-summary.json
+          name: mutation-results
+          path: apps/discord-bot/reports/mutation/
           if-no-files-found: warn

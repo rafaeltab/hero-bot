@@ -1,108 +1,146 @@
-# Advisory changed-code mutations
+# Advisory production-code mutations
 
-## Commands and completed feedback
+Mutation testing targets added/replaced production TypeScript lines, using the shared
+[production-source policy](production-source-policy.md). It never mutates tests,
+generated JS, evaluation tooling or other tooling. Stryker instruments the original
+TS; Vitest transpiles it as it runs. There is no per-mutant app build or shell-runner
+fallback.
+
+## Commands
+
+Use pinned Node/pnpm. Integration tests require
+[disposable PostgreSQL](postgres-validation.md) through `HERO_TEST_DATABASE_URL`.
 
 ```sh
+# Contract checks: no mutants executed.
 pnpm mutation:verify
-pnpm mutation --base <exact-commit-or-ref> --plan
-pnpm mutation --base <exact-commit-or-ref>
-# Eight independent jobs can execute these in parallel:
-pnpm mutation --base <exact-commit-or-ref> --shard 1/8
-# Repeat for 2/8 through 8/8, then:
-node scripts/mutation/summary.mjs apps/discord-bot/reports/mutation 8
+# Small real fixture: static kills, integration gating, reuse and invalid mutants.
+pnpm mutation:verify:real
+# Inspect changed production ranges against an explicit base.
+pnpm mutation --base <commit-or-ref> --plan
+# Coverage-guided stages, checkpoint reuse, 15-minute aggregate budget.
+pnpm mutation --base <commit-or-ref>
+# Full production scope, one-hour budget, suitable for baseline continuation.
+pnpm mutation --base HEAD --scope all --budget 3600
+# Discard checkpoint reuse for this invocation.
+pnpm mutation --base <commit-or-ref> --fresh
+# Instrument and collect unit-stage baseline coverage, executing no mutants.
+pnpm mutation --base HEAD --scope all --dry-run
 ```
 
-Full-suite mode requires disposable PostgreSQL through `HERO_TEST_DATABASE_URL`.
-Use a task-specific `TMPDIR` on a filesystem with available inodes when necessary;
-Turbo passes it through. Verification and coverage must run sequentially in a shared
-checkout because generated artifacts can invalidate fresh coverage receipts.
+`--budget` accepts 1–7200 seconds and includes stage startup/discovery, not dependency
+installation or contract checks. The coordinator terminates the worker process group
+at the deadline, retaining completed outcomes. `--dry-run` stops after the unit dry
+run and makes no completion claim. Run only one mutation coordinator per checkout;
+it owns `.stryker-tmp/` and its reports/checkpoints.
 
-Stryker sandboxes live under the repository's `.stryker-tmp/`, at the same
-directory depth as `apps/discord-bot`. This preserves repository-relative paths
-to immutable evaluation fixtures in both tests and evaluation commands. App
-source is still copied and instrumented in the sandbox; the evidence fixtures
-are not mutation targets. The real execution fixture exercises these paths in
-both per-test and full-suite modes.
+Changed scope compares the exact base tree to the working tree, including staged,
+unstaged and nonignored untracked source. Added/replaced lines become original
+Stryker ranges; deletions have no current node. Pure renames/new files conservatively
+count as additions. Full scope uses all eligible production files. Scope selection,
+coverage-guided test selection and checkpoint reuse remain distinct mechanisms.
 
-The notification-only PR selects 2,807 mutants. All four original shards passed
-their initial test runs but reached the 20-minute job limit during mutation
-execution. CI now balances whole original changed ranges across eight shards,
-retaining the same total scope and per-mutant full build/test fallback. An
-instrumentation-only inventory counted 401, 440, 398, 363, 211, 221, 410 and 363
-mutants across those shards; it is not a completed mutation analysis. The measured
-full-suite cost requires hours for the largest shard, so each job has a bounded
-240-minute budget, including setup, verification and artifact upload. No mutants
-are sampled out. Fail-fast is disabled, so a failure does not cancel siblings.
-Numbered checks distinguish shards; these are not duplicate push/PR executions.
+## Test stages and deferred coverage
 
-Each shard writes its plan before execution, separate JSON/HTML reports, and a
-completion receipt only after Stryker returns. Artifacts upload even on failure.
-`Mutations / Results` requires matching input fingerprints, all eight completed
-receipts, unchanged report hashes, finished mutant statuses, and an exact disjoint
-union of the original ranges. Missing/failed/timed-out work is explicitly incomplete,
-not a zero or passing score. Completed shards remain useful even if a sibling fails.
-Summary reports status counts; per-shard HTML/JSON contains individual mutants.
-Do not configure any mutation check as required merge protection.
+`apps/discord-bot/vitest.mutation.config.ts` partitions the existing suite:
 
-A single exceptionally large changed range can still exceed a shard's budget; it
-is not split across arbitrary line boundaries because that could drop multiline
-mutations. Increase shard count for other ranges or investigate that range explicitly.
-No mutation is silently sampled/dropped to obtain a successful result.
+1. Unit: files without database-backed cases.
+2. Integration: database-backed files, including mixed unit/database files, only
+   after the unit inventory finishes. Mutants resolved by unit tests (including classified timeouts and invalid outcomes) are gated out;
+   only unit survivors and NoCoverage candidates require integration observations.
 
-## Scope, selection and cache are separate
+Both stages use the native Stryker Vitest runner with `perTest` coverage, complete
+stage discovery (`related: false`), static initialization retained, early failure
+exit, and one worker. NoCoverage is an explicit result, not proof of verification.
+Classified per-mutant timeouts are surfaced as terminal outcomes but are not cached.
+Per-mutant RuntimeError/CompileError outcomes are recorded as invalid, excluded
+from the mutation score, and retried on later runs. Tool/dry-run failures remain
+incomplete and fail the command. Integration gating uses
+source path, original zero-based location, mutator and replacement, not stage-local
+numeric mutant IDs. Each stage retains native coverage-selected test plans.
 
-The CLI requires an explicit base and compares that **exact commit tree** to the
-current working tree (committed, staged, unstaged and nonignored untracked files).
-CI uses the PR base SHA, or the preceding main commit for a push. No implicit merge
-base or fallback to all code. Added/replaced production lines become Stryker ranges;
-deletions contain no current node. A mutation must fit wholly in an original range.
-Pure renames/new files are conservatively additions; whitespace changes count.
+The developer explicitly deferred `process.test.ts` and `intake-process.test.ts`
+from mutation execution; restoration is tracked by
+[issue #44](https://github.com/rafaeltab/hero-bot/issues/44). `evaluation.test.ts`
+launches the evaluation CLI and is also outside mutation execution. All three remain
+in ordinary tests and ordinary coverage: the base Vitest config is unchanged.
+Results describe this reduced mutation-observation suite, including potentially
+uncovered executable wiring. The former global subprocess fallback is removed.
 
-The shared [production-source policy](production-source-policy.md) governs scope,
-including test/generated/type-only exclusions and rejection of unsupported inputs.
-Plans show the exact selected ranges. Empty scope writes an explicit result and
-removes stale reports. Failed execution cannot reuse an old completed result.
+## Checkpoints and completion
 
-Default/CI full-suite mode rebuilds instrumented TypeScript and runs **every** app
-test for every mutant, including static initialization and compiled subprocess tests.
-This avoids unsound in-process coverage mapping for child Node processes.
+Reports live under `apps/discord-bot/reports/mutation/`. Each stage writes a native
+JSON/HTML report when it finishes and an atomically updated `progress.json` after
+planning, periodically during execution, and at completion. Snapshots are batched
+to avoid rewriting cumulative evidence for every fast mutant. Interruption can
+lose the most recent 250ms of outcomes; those mutants simply run again. Completed evidence accumulates independently
+in `checkpoint-unit.json` and `checkpoint-integration.json`. Interruption before
+planning leaves the inventory unknown; it must never be reported as complete.
 
-`--selection per-test` is only for independently verified in-process suites. The
-installed Vitest runner uses per-mutant coverage, discovers the complete suite,
-and retains all tests for static mutants. It is unsafe for the current whole app;
-real fixtures demonstrate subprocess-only mutants falsely appear NoCoverage there,
-while the full-suite fallback kills them. Do not treat related-file filtering or
-NoCoverage as successful integration verification.
+Every invocation performs fresh baseline discovery and mutant coverage collection.
+After that, compatible checkpoint results may replace execution. Fingerprints bind
+runtime/platform, tooling/configuration/lockfile/test inputs, declared application
+environment values and local `.env` bytes. Per-mutant evidence additionally follows
+relative imports from the mutant and its current coverage-selected test files.
+Changes to those dependencies invalidate reuse. Static/uncovered mutants and
+unsupported dynamic import graphs conservatively bind all production source.
+Test changes invalidate all results, including static results. Values are hashed,
+not included in checkpoint JSON. Base SHA and selected ranges are provenance, not
+cache validity: docs-only changes and unrelated source changes need not invalidate
+an independent runtime mutant.
 
-Optional `--incremental` is accepted only in per-test mode. Cache fingerprints bind
-base, exact shard/ranges, mode, Node/Stryker versions and repository input paths/bytes,
-including tests/config/lockfile. Test changes invalidate even static results.
-Identical-input reuse still performs a dry run; it proves neither line scope nor
-coverage-based selection. External state, environment values and ignored files are
-outside fingerprints; omit incremental reuse when they change or for release evidence.
-CI runs fresh and uploads reports, not caches.
+This is intentionally conservative. Imported file edits invalidate the dependent
+result; changing a file invalidates its own results even if only an unrelated
+function changed. External database/provider state is not captured. Use `--fresh`
+or change `HERO_MUTATION_EPOCH` after external state changes or for release evidence.
+Only Killed, Survived and NoCoverage outcomes are reusable; timeouts and errors rerun.
+Checkpoints are trusted execution evidence, not a security attestation against an
+editor who can alter code or artifacts.
 
-## Maintainability and evidence
+`summary.json` explicitly records complete/incomplete/error/dry-run, pending counts,
+selected scope, stage inventory/reuse and deferred tests. Complete requires a finished
+unit inventory and an integration result for each unit survivor/uncovered candidate.
+A mutant covered by either stage remains covered in the combined result; a unit
+survivor plus integration NoCoverage is Survived. An incomplete run reports status
+counts but no aggregate score. Tool/dry-run errors
+exit nonzero; budget exhaustion is advisory and visibly incomplete. Mutation scores
+remain advisory (`break=0`); no required merge checks change.
 
-- `planning.mjs`: explicit Git comparison and deterministic whole-range partitioning.
-- `cache.mjs`: conservative project fingerprint and cache identity.
-- `execution.mjs`: Stryker invocation, lifecycle and per-shard report/completion receipt.
-- `run.mjs`: small CLI interface; `summary.mjs`: validated aggregate completion.
+## CI budget and continuation
 
-Pinned Stryker core/Vitest runner 10.1.1 is verified against installed Vitest 5.1.0,
-Effect testing 4.1.2 and TypeScript 6.0.3. Actual execution fixtures independently
-prove changed-line scope, per-test coverage, static full-test selection, subprocess
-fallback, cache reuse/invalidation, an advisory score of 0.00 that exits successfully,
-and equivalence of sharded/unsharded mutation identities. Summary tests reject missing,
-duplicate, changed-input, pending and incomplete/dropped-range artifacts.
+PR updates run one job with a 900-second analysis budget. Superseded PR runs are
+cancelled. Empty scopes start no Stryker workers. Scheduled nightly and manual runs
+use full production scope and a 3600-second budget, resuming compatible completed
+work. There is no additional mutation run on every main push. The outer job ceiling
+is 70 minutes to allow setup, the one-hour analysis and artifact upload.
 
-Mutation score is advisory (`break=0`); tooling/dry-run errors remain visible.
-There is no per-mutant type checker. Runtime errors, timeouts, equivalent and surviving
-mutants require interpretation; completed reports do not prove behavioral completeness.
-See [current verification](scaffold-validation.md) and the
-[primary Stryker range semantics](https://stryker-mutator.io/docs/stryker-js/configuration/#mutate-string).
+Default-branch scheduled/manual runs publish cumulative baseline checkpoint caches.
+PR runs restore their own prior checkpoints first and the baseline as a fallback;
+successful/budget-exhausted PR runs save only into their PR-number namespace and
+merge-ref scope. Default-branch runs never consume PR checkpoints. GitHub enforces
+[cache isolation between PR merge refs and the base branch](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
+Cancelled runs may lose progress since their latest saved checkpoint. Artifacts
+include progress when the scope is unfinished. A successful Actions job can therefore
+have an incomplete advisory analysis: read its step summary/`summary.json`. Ordinary
+blocking CI retains its full tests, coverage and other gates.
 
-The review improvement run completed the complete 150-mutant PR scope locally:
-123 killed, 22 survived, 5 classified timeouts; no job exhausted its budget.
-All original ranges were verified present exactly once. The longest shard took
-308.5 seconds. See the validation record for context; hosted performance can differ.
+## Validation and limits
+
+Contract tests cover explicit scopes, dependency/test invalidation, independent
+source reuse, static invalidation, stage-independent identities, gating, interrupted
+work, stale report removal and empty scopes. These tests do not execute mutants.
+The opt-in real fixture (`mutation:verify:real`, also run once in CI) verifies
+native kills, static initialization, unit-to-integration gating, cached equivalence,
+docs-only reuse, dependency invalidation and invalid-mutant accounting.
+The native runner's baseline can be verified with `--dry-run`; ordinary staged test
+execution verifies the suite partition independently of mutation execution.
+
+Real local validation completed a 75-mutant whole-module PR replay in 65.646s
+fresh and 13.850s with checkpoints, with identical outcomes. The fresh full scope
+(2,965 mutants) did not finish in 35 minutes; three minutes of continuation left
+777 pending. No full-scope score or completed full-run duration is claimed.
+[Measured results](mutation-performance-validation.md) record scope, hardware,
+correctness fixes, historical comparisons and limitations. Hosted timings and
+actual Actions cache transport remain unverified. Historical decision evidence
+is preserved in [the investigation](mutation-efficiency-research.md) and
+[wallpaperdb comparison](wallpaperdb-mutation-research.md).

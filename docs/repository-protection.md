@@ -3,7 +3,7 @@
 The existing **main** ruleset (ID `26479514`) is **active** and requires only
 **`Checks`** from workflow **`CI`** (GitHub Actions integration `15368`). The PR UI
 displays `CI / Checks`. The owner activated the ruleset; this state was independently
-verified through the API. Mutation shards and `Mutations / Results` remain optional
+verified through the API. Mutation analysis remains optional
 by the user's explicit choice. No rule changes are needed for this test/guide update.
 
 Successful workflow steps alone do not prove merge enforcement; verify the rule:
