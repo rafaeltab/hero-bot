@@ -23,6 +23,9 @@ A restriction of a member's ordinary server access pending a moderator decision,
 **Restriction level**:
 A member's current moderation restriction: unrestricted, purgatory, or banned. It describes the member's state, independently of the action recommended or applied for any individual report.
 
+**Course role**:
+A server role designated as indicating that a member has access to a course. This is distinct from a moderator role.
+
 **Recommended action**:
 The moderation action judged appropriate for a case, regardless of whether it is enabled or has been carried out.
 
